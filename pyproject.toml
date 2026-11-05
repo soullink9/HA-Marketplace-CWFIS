@@ -1,0 +1,29 @@
+# Tooling settings only: Home Assistant installs the integration from custom_components/cwfis/, so nothing
+# here is needed to run it. CI (.github/workflows/ci.yml) uses these.
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, bugbear, import order, simplifications, comprehensions, and a docstring on everything
+select = ["F", "E", "W", "B", "I", "SIM", "C4", "D1"]
+ignore = [
+    "E501",  # the formatter sets line length; long strings, prompts and data rows are left whole
+    "B905",  # zip() without strict=: the pairs in this code are always the same length
+    "SIM108",  # a plain if/else is often clearer than a long conditional expression (see CONTRIBUTING.md)
+]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true  # Home Assistant's import style
+known-first-party = ["custom_components", "cwfis"]
+combine-as-imports = true
+
+[tool.ruff.lint.per-file-ignores]
+# The tests follow one layout (see CONTRIBUTING.md): stubs.py holds the stand-ins for Home Assistant and libraries,
+# test_*.py are the scripts to run, fake_*.py a fake device or service. The stand-ins mirror Home Assistant's own
+# classes, so they carry no docstrings of their own; the tests favour short, direct code, and import the integration
+# only after the stand-ins are registered (E402).
+"tests/stubs.py" = ["D1", "E402", "E702", "E731", "C408"]
+"tests/test_*.py" = ["D101", "D102", "D103", "D105", "D107", "E402", "E731", "E741", "C408", "SIM102", "SIM105", "SIM113"]
+"tests/fake_*.py" = ["D1", "E402"]

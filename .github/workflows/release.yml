@@ -1,0 +1,84 @@
+# Publishes a GitHub release: the Marketplace installs and updates from these. Each release gets the changelog
+# section as its notes and a zip of the integration for installing by hand.
+#
+# Two ways to start it:
+#   - Push a version tag:  git tag v1.2.3 && git push origin v1.2.3
+#   - Actions tab → Release → Run workflow, and enter the version (1.2.3). This also creates the tag on the
+#     branch you run it from.
+# It refuses to publish unless manifest.json and CHANGELOG.md are at that version, so a release always matches
+# the code in it.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the v (for example 1.2.0)"
+        required: true
+
+permissions:
+  contents: write # to create the tag and the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Work out the version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${INPUT_VERSION#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check the manifest is at this version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          found=$(jq -r .version custom_components/cwfis/manifest.json)
+          if [ "$found" != "$VERSION" ]; then
+            echo "::error file=custom_components/cwfis/manifest.json::version is $found, but the release is $VERSION"
+            exit 1
+          fi
+
+      - name: Take the release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Everything under "## <version> (date)" up to the next "## " heading.
+          awk -v heading="## $VERSION " 'index($0, heading) == 1 { on = 1; next } on && /^## / { exit } on' \
+            CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error file=CHANGELOG.md::there is no '## $VERSION' section"
+            exit 1
+          fi
+
+      - name: Build the zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir dist
+          # Unzip it into /config/custom_components/.
+          (cd custom_components && zip -qr "../dist/cwfis-${VERSION}.zip" cwfis -x '*/__pycache__/*')
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # A release made by hand on GitHub: add the files and notes to it.
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --title "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" dist/* --title "$TAG" --notes-file notes.md --target "$GITHUB_SHA"
+          fi

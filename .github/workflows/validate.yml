@@ -1,0 +1,22 @@
+# The Marketplace's own checks (the HACS action): the catalog requires a passing run with nothing ignored.
+# See https://contributors.home-assistant.io/marketplace/reference/validation/
+name: Validate
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  validate-hacs:
+    name: Marketplace checks (HACS action)
+    runs-on: ubuntu-latest
+    steps:
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration

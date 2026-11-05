@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in the Canadian Wildland Fire Information System integration isn't working as it should.
+labels: [bug, cwfis]
+body:
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Home Assistant (Settings → About) and this integration ("version" in custom_components/cwfis/manifest.json).
+      placeholder: Home Assistant 2026.9.4, CWFIS 1.0.0
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      description: The steps, if you know them.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part
+      options:
+        - Setup or the Configure form
+        - National or province sensors
+        - Distance, alerts or the fire alert event
+        - Smoke (forecast, upwind or wildfire smoke)
+        - Map markers or map images
+        - Something else
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Settings → System → Logs, search for cwfis. Remove anything private before pasting.
+      render: text

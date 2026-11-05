@@ -1,0 +1,58 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Canadian Wildland Fire Information System",
+        "description": "Adds CWFIS wildfire data using your Home location. Use Configure afterwards to change the settings."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "CWFIS is already set up. Use Configure on the existing entry to change its settings."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CWFIS settings",
+        "data": {
+          "radius": "Alert radius",
+          "zones": "Extra watch zones (optional)",
+          "smoke_radius": "Smoke radius",
+          "wind_entity": "Wind direction sensor (optional)",
+          "pm25_entity": "PM2.5 sensor (optional)",
+          "pm25_threshold": "PM2.5 smoke threshold",
+          "provinces": "Province sensors (optional)",
+          "map_fires": "Fires on map",
+          "map_images": "Map images (optional)"
+        },
+        "data_description": {
+          "radius": "Agency-reported fires within this distance of a zone count as nearby and raise Fire alert events. Hotspots, perimeters and prescribed burns are also counted within this distance.",
+          "zones": "Home is always watched. Add zones (cottage, family, trip) to get the same sensors for each.",
+          "smoke_radius": "How far away a fire can be and still count as a smoke source for Fire upwind and Wildfire smoke.",
+          "wind_entity": "A sensor reporting the direction the wind is coming FROM, in degrees. Enables Fire upwind.",
+          "pm25_entity": "An air-quality PM2.5 sensor (e.g. AirNow or PurpleAir). Enables Wildfire smoke.",
+          "pm25_threshold": "PM2.5 at or above this counts as smoky. 35 µg/m³ is the US EPA 24-hour standard.",
+          "provinces": "Adds Active fires and Area burned sensors for each agency picked. Every agency is always listed in the national sensors' attributes.",
+          "map_fires": "Which fires get a map marker (geo_location.cwfis_* entity).",
+          "map_images": "Canada-wide maps rendered by CWFIS, one image entity each. Works alongside the markers; show them with a Picture entity card."
+        }
+      }
+    }
+  },
+  "entity": {
+    "event": {
+      "fire_alert": {
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "new_fire_nearby": "New fire nearby",
+              "stage_changed": "Stage changed",
+              "fire_grew": "Fire grew",
+              "fire_out": "Fire out"
+            }
+          }
+        }
+      }
+    }
+  }
+}
