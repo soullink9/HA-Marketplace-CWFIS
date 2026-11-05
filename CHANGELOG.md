@@ -4,7 +4,8 @@
 
 - Moved to its own repository, [HA-Marketplace-CWFIS](https://github.com/soullink9/HA-Marketplace-CWFIS), so it can be installed and updated
   from the Home Assistant Marketplace (Home Assistant 2026.11 and newer). Installing by hand works as before.
-- No changes to how the integration works.
+- Lists its categories, so it shows up in the right place when browsing the Marketplace. No other changes to how
+  the integration works.
 
 ## 1.1.1 (2026-11-02)
 

@@ -1,6 +1,10 @@
 {
   "domain": "cwfis",
   "name": "Canadian Wildland Fire Information System",
+  "categories": [
+    "weather_alerts.public_warnings",
+    "weather_alerts.air_quality_pollen"
+  ],
   "codeowners": [
     "@soullink9"
   ],
