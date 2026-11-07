@@ -60,10 +60,6 @@ Bug reports and pull requests are welcome: [open an issue](https://github.com/so
 
 ## Credits
 
-Code from other people in this project:
-
-- None. The integration follows the patterns in the [Home Assistant developer documentation](https://developers.home-assistant.io/) and uses Home Assistant's built-in helpers.
-
 Data this project uses:
 
 - **Canadian Wildland Fire Information System (CWFIS)** and the **Canadian Wildland Fire Information Framework (CWFIF)**, from Natural Resources Canada, Canadian Forest Service. It provides reported and prescribed fires, hotspots, fire perimeters, fire danger and map images. *Contains information licensed under the [Open Government Licence – Canada](https://open.canada.ca/en/open-government-licence-canada).*
