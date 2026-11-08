@@ -1,21 +1,23 @@
-# Publishes a GitHub release: the Marketplace installs and updates from these. Each release gets the changelog
-# section as its notes and a zip of the integration for installing by hand.
+# Publishes a GitHub release: cwfis.zip, with release notes taken from that version's section of
+# CHANGELOG.md. This is the copy the Marketplace installs and updates from.
+# (.gitea/workflows/release.yml does the same on Gitea; both use the scripts in scripts/.)
 #
 # Two ways to start it:
-#   - Push a version tag:  git tag v1.2.3 && git push origin v1.2.3
-#   - Actions tab → Release → Run workflow, and enter the version (1.2.3). This also creates the tag on the
-#     branch you run it from.
-# It refuses to publish unless manifest.json and CHANGELOG.md are at that version, so a release always matches
-# the code in it.
+#   - A version tag arriving here: Gitea's push mirror sends the tag after a release on Gitea, so each release
+#     appears on both. (Pushing a tag here yourself works too: git tag v1.2.1 && git push origin v1.2.1.)
+#   - Actions tab → Release → Run workflow, and enter the version (1.2.1). This also creates the tag (v1.2.1) on
+#     the branch you run it from.
+# It refuses to publish unless every version in the project and CHANGELOG.md agree with it and every check passes,
+# so a release always matches the code in it. A version with a suffix (-beta) is a pre-release.
 name: Release
 
 on:
   push:
-    tags: ["v*.*.*"]
+    tags: ["v*.*.*", "V*.*.*"]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release, without the v (for example 1.2.0)"
+        description: "Version to release, without the v (for example 1.2.1)"
         required: true
 
 permissions:
@@ -27,58 +29,59 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # CWFIS supports Home Assistant 2026.3 and newer, the oldest of which can run on Python 3.13, so
+    # that's what the tests prove it works on
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
       - name: Work out the version
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            version="${GITHUB_REF_NAME#v}"
+            tag="$GITHUB_REF_NAME"
           else
-            version="${INPUT_VERSION#v}"
+            tag="v${INPUT_VERSION#[vV]}"  # (a "v" typed by mistake is fine)
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Check the manifest is at this version
+      - name: Check the version and take the release notes from CHANGELOG.md
+        id: notes
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          found=$(jq -r .version custom_components/cwfis/manifest.json)
-          if [ "$found" != "$VERSION" ]; then
-            echo "::error file=custom_components/cwfis/manifest.json::version is $found, but the release is $VERSION"
-            exit 1
-          fi
+          TAG: ${{ steps.version.outputs.tag }}
+        run: python3 scripts/release_notes.py "$TAG" "$GITHUB_REPOSITORY" notes.md >> "$GITHUB_OUTPUT"
 
-      - name: Take the release notes from CHANGELOG.md
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          # Everything under "## <version> (date)" up to the next "## " heading.
-          awk -v heading="## $VERSION " 'index($0, heading) == 1 { on = 1; next } on && /^## / { exit } on' \
-            CHANGELOG.md > notes.md
-          if ! grep -q '[^[:space:]]' notes.md; then
-            echo "::error file=CHANGELOG.md::there is no '## $VERSION' section"
-            exit 1
-          fi
+      - name: Install what the checks need
+        run: pip install ruff
 
-      - name: Build the zip
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
+      - name: Lint and format (ruff)
+        run: ruff check && ruff format --check
+
+      - name: Run every test
         run: |
-          mkdir dist
-          # Unzip it into /config/custom_components/.
-          (cd custom_components && zip -qr "../dist/cwfis-${VERSION}.zip" cwfis -x '*/__pycache__/*')
+          python3 tests/test_integration.py
+          python3 tests/test_release.py
+
+      # The asset keeps the same name in every release: .../releases/latest/download/cwfis.zip relies on it.
+      - name: Build cwfis.zip, and check it installs as custom_components/cwfis/
+        run: python3 scripts/build_package.py
 
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
+          TITLE: ${{ steps.notes.outputs.title }}
+          PRERELEASE: ${{ steps.notes.outputs.prerelease }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
             # A release made by hand on GitHub: add the files and notes to it.
             gh release upload "$TAG" dist/* --clobber
-            gh release edit "$TAG" --title "$TAG" --notes-file notes.md
+            gh release edit "$TAG" --title "$TITLE" --notes-file notes.md --prerelease="$PRERELEASE"
           else
-            gh release create "$TAG" dist/* --title "$TAG" --notes-file notes.md --target "$GITHUB_SHA"
+            flags=()
+            if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+            gh release create "$TAG" dist/* --title "$TITLE" --notes-file notes.md \
+              --target "$GITHUB_SHA" "${flags[@]}"
           fi

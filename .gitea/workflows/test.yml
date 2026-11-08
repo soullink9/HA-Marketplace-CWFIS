@@ -1,0 +1,55 @@
+# Runs every check on each push and pull request, on your own Gitea runner: lint, the tests, and building the
+# release zip.
+#
+# It uses no actions: actions/checkout, setup-python and the like are downloaded from GitHub, so a GitHub outage
+# would stop every run. Instead each job runs in a plain image from Docker Hub that already has what it needs,
+# and gets the code from Gitea with git. (Home Assistant's hassfest and the Marketplace's own checks come from
+# GitHub, so they stay in .github/workflows/ and run on the GitHub copy.)
+#
+# Gitea only reads .gitea/workflows when it exists, so GitHub's workflows in .github/ never run here.
+name: Test
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+env:
+  # Gitea's address as the job containers can reach it, if that isn't its public address (ROOT_URL): for a runner
+  # next to Gitea, e.g. http://gitea-server:3000. Set it once as an Actions variable on your user or organisation.
+  GITEA_INTERNAL_URL: ${{ vars.GITEA_INTERNAL_URL }}
+
+jobs:
+  tests:
+    # CWFIS supports Home Assistant 2026.3 and newer, the oldest of which can run on Python 3.13, so
+    # that's what the tests prove it works on
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.13-bookworm
+    steps:
+      - name: Get the code
+        env:
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          git init -q .
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          repo="${GITEA_INTERNAL_URL:-$GITHUB_SERVER_URL}/$GITHUB_REPOSITORY.git"
+          # the exact commit that started the run; its branch or pull request as a fallback
+          git -c http.extraHeader="Authorization: Basic $auth" fetch -q --depth 1 "$repo" "$GITHUB_SHA" ||
+            git -c http.extraHeader="Authorization: Basic $auth" fetch -q --depth 1 "$repo" "$GITHUB_REF"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='Testing %h %s'
+
+      - name: Install what the checks need (from PyPI)
+        run: pip install --no-cache-dir ruff
+
+      - name: Lint and format (ruff)
+        run: ruff check && ruff format --check
+
+      - name: Tests
+        run: |
+          python3 tests/test_integration.py &&
+            python3 tests/test_release.py
+
+      - name: Build cwfis.zip, and check it installs as custom_components/cwfis/
+        run: python3 scripts/build_package.py

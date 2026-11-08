@@ -1,3 +1,5 @@
 .ruff_cache/
 __pycache__/
 *.pyc
+# the release zip, built by scripts/build_package.py
+dist/

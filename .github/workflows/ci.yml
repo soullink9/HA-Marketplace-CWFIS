@@ -41,3 +41,6 @@ jobs:
         with:
           python-version: "3.13"
       - run: python tests/test_integration.py
+      - run: python tests/test_release.py
+      - name: Build cwfis.zip, and check it installs
+        run: python scripts/build_package.py

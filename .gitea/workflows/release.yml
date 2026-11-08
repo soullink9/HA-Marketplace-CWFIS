@@ -1,0 +1,116 @@
+# Publishes a release on Gitea: cwfis.zip, with notes from that version's section of CHANGELOG.md.
+#
+# Two ways to start it:
+#   - Actions tab → Release → Run workflow, and enter the version (1.2.1). This also creates the tag (v1.2.1) on
+#     the commit it releases.
+#   - Push a version tag:  git tag v1.2.1 && git push origin v1.2.1
+# It refuses to publish unless every version in the project and CHANGELOG.md agree with it and every check passes,
+# so a release always matches the code in it. A version with a suffix (-beta) is a pre-release.
+#
+# With Gitea push-mirroring to GitHub, the new tag reaches GitHub too, and GitHub's own release workflow
+# (.github/workflows/release.yml) publishes the same release there: that's the copy the Marketplace installs from.
+#
+# Like test.yml it uses no actions, so it works when GitHub can't be reached. The release notes still point at
+# the public copy on GitHub (PUBLIC_REPOSITORY), which is where people install from.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*", "V*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the v (for example 1.2.1)"
+        required: true
+
+env:
+  PUBLIC_REPOSITORY: soullink9/HA-Marketplace-CWFIS
+  # Gitea's address as the job containers can reach it, if that isn't its public address (ROOT_URL): for a runner
+  # next to Gitea, e.g. http://gitea-server:3000. Set it once as an Actions variable on your user or organisation.
+  GITEA_INTERNAL_URL: ${{ vars.GITEA_INTERNAL_URL }}
+
+jobs:
+  tests:
+    # CWFIS supports Home Assistant 2026.3 and newer, the oldest of which can run on Python 3.13, so
+    # that's what the tests prove it works on
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.13-bookworm
+    steps:
+      - name: Get the code
+        env:
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          git init -q .
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          repo="${GITEA_INTERNAL_URL:-$GITHUB_SERVER_URL}/$GITHUB_REPOSITORY.git"
+          # the exact commit that started the run; its branch or pull request as a fallback
+          git -c http.extraHeader="Authorization: Basic $auth" fetch -q --depth 1 "$repo" "$GITHUB_SHA" ||
+            git -c http.extraHeader="Authorization: Basic $auth" fetch -q --depth 1 "$repo" "$GITHUB_REF"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='Testing %h %s'
+
+      - name: Install what the checks need (from PyPI)
+        run: pip install --no-cache-dir ruff
+
+      - name: Lint and format (ruff)
+        run: ruff check && ruff format --check
+
+      - name: Tests
+        run: |
+          python3 tests/test_integration.py &&
+            python3 tests/test_release.py
+
+      - name: Build cwfis.zip, and check it installs as custom_components/cwfis/
+        run: python3 scripts/build_package.py
+
+  release:
+    needs: tests
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.13-bookworm
+    steps:
+      - name: Get the code
+        env:
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          git init -q .
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          repo="${GITEA_INTERNAL_URL:-$GITHUB_SERVER_URL}/$GITHUB_REPOSITORY.git"
+          # the exact commit that started the run; its branch or pull request as a fallback
+          git -c http.extraHeader="Authorization: Basic $auth" fetch -q --depth 1 "$repo" "$GITHUB_SHA" ||
+            git -c http.extraHeader="Authorization: Basic $auth" fetch -q --depth 1 "$repo" "$GITHUB_REF"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='Releasing %h %s'
+
+      - name: Work out the version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v${INPUT_VERSION#[vV]}"  # (a "v" typed by mistake is fine)
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Check the version and take the release notes from CHANGELOG.md
+        id: notes
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: python3 scripts/release_notes.py "$TAG" "$PUBLIC_REPOSITORY" notes.md >> "$GITHUB_OUTPUT"
+
+      - name: Build cwfis.zip, and check it installs as custom_components/cwfis/
+        run: python3 scripts/build_package.py
+
+      - name: Publish on Gitea
+        env:
+          # the job's own token; set a RELEASE_TOKEN secret instead if your Gitea doesn't let it make releases
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITEA_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          COMMIT: ${{ steps.version.outputs.commit }}
+          TITLE: ${{ steps.notes.outputs.title }}
+          PRERELEASE: ${{ steps.notes.outputs.prerelease }}
+        run: python3 scripts/publish_gitea_release.py "$TAG" "$COMMIT" "$TITLE" notes.md "$PRERELEASE" dist/*
