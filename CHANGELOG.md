@@ -5,8 +5,9 @@
 ### Repository
 
 - Gitea is the main copy: its runner checks every push and publishes releases (`.gitea/workflows/`), with nothing
-  downloaded from GitHub, so it keeps working when GitHub can't be reached. Gitea push-mirrors to GitHub, and a
-  version tag arriving there publishes the same release on GitHub, where the Marketplace installs from.
+  downloaded from GitHub, so it keeps working when GitHub can't be reached. Gitea push-mirrors to GitHub, and every
+  push from it publishes on GitHub the releases GitHub doesn't have yet, with the same files and notes, where the
+  Marketplace installs from.
 - The release helpers live in `scripts/` and are used by both: the version check and notes, building the zip, and
   publishing on Gitea. Every release's notes now start with how to install it.
 - The release's zip is now always `cwfis.zip` (it had the version in its name), so

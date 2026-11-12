@@ -1,56 +1,76 @@
-# Publishes a GitHub release: cwfis.zip, with release notes taken from that version's section of
+# Publishes GitHub's releases: cwfis.zip, with release notes taken from that version's section of
 # CHANGELOG.md. This is the copy the Marketplace installs and updates from.
-# (.gitea/workflows/release.yml does the same on Gitea; both use the scripts in scripts/.)
+# (.gitea/workflows/release.yml publishes them on Gitea first; both use the scripts in scripts/.)
 #
-# Two ways to start it:
-#   - A version tag arriving here: Gitea's push mirror sends the tag after a release on Gitea, so each release
-#     appears on both. (Pushing a tag here yourself works too: git tag v1.2.1 && git push origin v1.2.1.)
-#   - Actions tab → Release → Run workflow, and enter the version (1.2.1). This also creates the tag (v1.2.1) on
-#     the branch you run it from.
-# It refuses to publish unless every version in the project and CHANGELOG.md agree with it and every check passes,
-# so a release always matches the code in it. A version with a suffix (-beta) is a pre-release.
+# GitHub ends up with the same releases as Gitea: the same files, title and notes. Releases start on Gitea, and
+# Gitea's push mirror brings their tags here (every 8 hours). Every push from the mirror starts this workflow:
+#   1. plan: lists the version tags with no published release here yet (scripts/plan_github_releases.py).
+#      Checking every tag, not only the one pushed, matters: when more than three tags arrive in one push GitHub
+#      starts no workflow for any of them, and a release whose run failed gets another go at the next push.
+#   2. release: for each of them, oldest first, checks out the tag, runs every check, builds the same files Gitea
+#      built (the builds are repeatable, byte for byte) and publishes them with the same title and notes.
+# Actions tab → Release → Run workflow does the same straight away, without waiting for the mirror.
+# It never creates a tag: the mirror deletes tags Gitea doesn't have, so a tag made here wouldn't last.
 name: Release
 
 on:
   push:
+    branches: [main]
     tags: ["v*.*.*", "V*.*.*"]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to release, without the v (for example 1.2.1)"
-        required: true
 
 permissions:
-  contents: write # to create the tag and the release
+  contents: write # to publish releases
+
+# One run at a time: a mirror push that moves main and brings a tag starts this twice, and the second run then
+# finds the release already published instead of racing the first to create it.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  release:
+  plan:
     runs-on: ubuntu-latest
+    outputs:
+      releases: ${{ steps.plan.outputs.releases }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # every tag, to compare with GitHub's releases
+
+      - name: Find the version tags GitHub has no release for
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 1000 --json tagName,isDraft > releases.json
+          python3 scripts/plan_github_releases.py releases.json "$GITHUB_OUTPUT"
+
+  release:
+    needs: plan
+    if: needs.plan.outputs.releases != '[]'
+    name: Release ${{ matrix.tag }}
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1 # one at a time, oldest version first
+      fail-fast: false # a version that fails its checks doesn't hold up the others
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.releases) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.tag }} # the release is built from its tag, as on Gitea
 
       # CWFIS supports Home Assistant 2026.3 and newer, the oldest of which can run on Python 3.13, so
-    # that's what the tests prove it works on
+      # that's what the tests prove it works on
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
-      - name: Work out the version
-        id: version
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            tag="$GITHUB_REF_NAME"
-          else
-            tag="v${INPUT_VERSION#[vV]}"  # (a "v" typed by mistake is fine)
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
       - name: Check the version and take the release notes from CHANGELOG.md
         id: notes
         env:
-          TAG: ${{ steps.version.outputs.tag }}
+          TAG: ${{ matrix.tag }}
         run: python3 scripts/release_notes.py "$TAG" "$GITHUB_REPOSITORY" notes.md >> "$GITHUB_OUTPUT"
 
       - name: Install what the checks need
@@ -71,17 +91,18 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
+          TAG: ${{ matrix.tag }}
           TITLE: ${{ steps.notes.outputs.title }}
           PRERELEASE: ${{ steps.notes.outputs.prerelease }}
+          LATEST: ${{ matrix.latest }}
         run: |
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            # A release made by hand on GitHub: add the files and notes to it.
-            gh release upload "$TAG" dist/* --clobber
-            gh release edit "$TAG" --title "$TITLE" --notes-file notes.md --prerelease="$PRERELEASE"
-          else
-            flags=()
-            if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
-            gh release create "$TAG" dist/* --title "$TITLE" --notes-file notes.md \
-              --target "$GITHUB_SHA" "${flags[@]}"
+          # A draft on this tag is what GitHub leaves when a tag goes missing from Gitea for a while: replace it.
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)" = "true" ]; then
+            gh release delete "$TAG" --yes
           fi
+          # "Latest" only for the newest version without a suffix, so publishing an older version after a newer one
+          # doesn't make it the one .../releases/latest/download/ hands out.
+          flags=(--latest="$LATEST")
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          # --verify-tag: publish on the tag Gitea sent, and never create one
+          gh release create "$TAG" dist/* --verify-tag --title "$TITLE" --notes-file notes.md "${flags[@]}"

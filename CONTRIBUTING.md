@@ -95,10 +95,12 @@ installs from GitHub's releases, so every link in the docs and release notes poi
    check fails, nothing is published. Running it again for the same version updates the release and replaces its
    zip.
 
-5. Gitea's push mirror then sends the commits and the new tag to GitHub, where the tag starts GitHub's own
-   **Release** workflow (`.github/workflows/release.yml`), which runs the same checks and publishes the same
-   release there. The Marketplace picks it up from GitHub. If GitHub is down, the mirror catches up later; the Gitea
-   release is already done.
+5. Gitea's push mirror then sends the commits and the new tag to GitHub, at its next push (every 8 hours). Every push
+   from it starts GitHub's own **Release** workflow (`.github/workflows/release.yml`), which publishes each version
+   tag that has no GitHub release yet: the same checks, then the same files (the builds are repeatable, byte for
+   byte), title and notes, so GitHub's releases match Gitea's. The Marketplace picks it up from GitHub. If GitHub is
+   down, the mirror catches up later; the Gitea release is already done. Don't make releases or tags on GitHub
+   itself: the mirror deletes tags Gitea doesn't have, and GitHub follows Gitea on its own.
 
 The Gitea workflows use no actions (`actions/checkout` and the like download from GitHub): each job runs in a plain
 image from Docker Hub (`python:3.13-bookworm`) and fetches the code from Gitea with git, so testing and releasing

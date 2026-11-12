@@ -7,8 +7,9 @@
 # It refuses to publish unless every version in the project and CHANGELOG.md agree with it and every check passes,
 # so a release always matches the code in it. A version with a suffix (-beta) is a pre-release.
 #
-# With Gitea push-mirroring to GitHub, the new tag reaches GitHub too, and GitHub's own release workflow
-# (.github/workflows/release.yml) publishes the same release there: that's the copy the Marketplace installs from.
+# With Gitea push-mirroring to GitHub, the new tag reaches GitHub at the mirror's next push, and GitHub's own release
+# workflow (.github/workflows/release.yml) then publishes the same release there, built from the same tag: that's the
+# copy the Marketplace installs from.
 #
 # Like test.yml it uses no actions, so it works when GitHub can't be reached. The release notes still point at
 # the public copy on GitHub (PUBLIC_REPOSITORY), which is where people install from.

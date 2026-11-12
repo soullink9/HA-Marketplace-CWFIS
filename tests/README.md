@@ -11,7 +11,7 @@ python3 tests/test_release.py
 | Script | What it checks |
 |---|---|
 | `test_integration.py` | Offline simulation of the CWFIS integration — run before every release |
-| `test_release.py` | The release scripts in `scripts/`: the version check and notes, building and checking the zip, and publishing to a fake Gitea server |
+| `test_release.py` | The release scripts in `scripts/`: the version check and notes, building and checking the zip, publishing to a fake Gitea server, and working out which releases GitHub still needs |
 
 [CONTRIBUTING.md](../CONTRIBUTING.md#checking-a-change) says which to run for which change, and how long each takes.
 The tests stand in for Home Assistant (`stubs.py`), so they can't prove the integration works on a real Home

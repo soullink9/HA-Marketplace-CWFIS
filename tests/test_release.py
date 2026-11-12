@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import build_package  # noqa: E402,I001  (scripts/ is put on the path just above)
 import check_package  # noqa: E402
+import plan_github_releases  # noqa: E402
 import release_notes  # noqa: E402
 
 DOMAIN = "cwfis"
@@ -304,11 +305,68 @@ def test_publish():
     server.shutdown()
 
 
+# --- plan_github_releases.py: which releases GitHub still needs, after a push from Gitea's mirror ---
+def test_plan():
+    """Missing and draft releases are planned oldest first; "Latest" goes only to the newest plain version."""
+    plan = plan_github_releases.plan
+    tags = ["v1.0.0", "v1.2.0", "v1.10.0", "v1.3.0-beta", "v1.3.0", "latest", "v1.2", "v1.2.0.1"]
+    releases = [{"tagName": "v1.0.0", "isDraft": False}, {"tagName": "v1.2.0", "isDraft": True}]
+    planned, skipped = plan(tags, releases)
+    check(
+        [entry["tag"] for entry in planned] == ["v1.2.0", "v1.3.0-beta", "v1.3.0", "v1.10.0"] and not skipped,
+        "every version tag without a published release (a draft counts as missing), oldest first; other tags ignored",
+    )
+    check([entry["tag"] for entry in planned if entry["latest"]] == ["v1.10.0"], "only the newest version is Latest")
+    check(
+        plan(["v1.0.0"], [{"tagName": "v1.0.0", "isDraft": False}]) == ([], []),
+        "every release published: nothing to do",
+    )
+    planned, _ = plan(["v1.1.0", "v1.2.0"], [{"tagName": "v1.2.0", "isDraft": False}])
+    check(planned == [{"tag": "v1.1.0", "latest": False}], "an older version published late isn't made Latest")
+    planned, _ = plan(["v1.2.0", "v1.3.0-beta"], [])
+    check(
+        [entry for entry in planned if entry["latest"]] == [{"tag": "v1.2.0", "latest": True}],
+        "a pre-release is never Latest",
+    )
+    planned, skipped = plan(["v0.9.0", "v1.0.0"], [], buildable=lambda tag: tag != "v0.9.0")
+    check(
+        skipped == ["v0.9.0"] and [entry["tag"] for entry in planned] == ["v1.0.0"],
+        "a tag without the scripts is left out",
+    )
+
+    # The script itself, in a real repository: an old tag from before scripts/, then two releases, one published.
+    repo = Path(tempfile.mkdtemp(dir=TMP))
+    git = ["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "old"], check=True)
+    subprocess.run([*git, "tag", "v0.9.0"], check=True)
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "release_notes.py").write_text("")
+    subprocess.run([*git, "add", "."], check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "scripts"], check=True)
+    subprocess.run([*git, "tag", "v1.0.0"], check=True)
+    subprocess.run([*git, "tag", "v1.1.0"], check=True)
+    (repo / "releases.json").write_text(json.dumps([{"tagName": "v1.0.0", "isDraft": False}]))
+    outputs = repo / "outputs.txt"
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "plan_github_releases.py"), "releases.json", str(outputs)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    check(
+        result.returncode == 0 and outputs.read_text() == 'releases=[{"tag": "v1.1.0", "latest": true}]\n',
+        f"the script writes the plan to the step's outputs ({result.stderr.strip() or outputs.read_text().strip()})",
+    )
+    check("::warning::v0.9.0" in result.stdout, "…and warns, in the run's log, about the tag it can't build")
+
+
 if __name__ == "__main__":
     try:
         test_notes()
         test_package()
         test_publish()
+        test_plan()
     finally:
         shutil.rmtree(TMP, ignore_errors=True)
     print()
