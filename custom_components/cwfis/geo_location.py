@@ -4,16 +4,18 @@ Markers are created and removed as fires start and go out. They are not stored i
 registry (Home Assistant's design for geo_location), so they never leave orphaned entities behind.
 """
 
-from __future__ import annotations
-
 from homeassistant.components.geo_location import GeolocationEvent
 from homeassistant.const import UnitOfLength
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_MAP_FIRES, DEFAULT_MAP_FIRES, DOMAIN
-from .coordinator import CwfisCoordinator
+from .coordinator import CwfisConfigEntry, CwfisCoordinator
 from .helpers import fire_info
+
+# Every marker reads the coordinator's data, so Home Assistant needn't limit how many update at once.
+PARALLEL_UPDATES = 0
 
 
 def marker_name(fire_id: str) -> str:
@@ -22,9 +24,11 @@ def marker_name(fire_id: str) -> str:
     return "CWFIS " + (rest.replace(f"_{year}_", "_") if rest else year).replace("_", " ")
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant, entry: CwfisConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
+) -> None:
     """Keep the set of marker entities in sync with the fires after every update."""
-    coordinator: CwfisCoordinator = entry.runtime_data
+    coordinator = entry.runtime_data
     mode = entry.options.get(CONF_MAP_FIRES, DEFAULT_MAP_FIRES)  # "all", "nearby" or "none"
     markers: dict[str, FireMarker] = {}
 

@@ -13,8 +13,8 @@ python3 tests/test_release.py
 python3 scripts/build_package.py
 ```
 
-These need Python 3.13 and nothing else: CWFIS supports Home Assistant 2026.3 and newer, the oldest of which can run
-on 3.13, so that's what the workflows use. `test_release.py` checks the release scripts (any change to `scripts/` or
+These need Python 3.14 and nothing else: CWFIS supports only the latest Home Assistant (2026.11 and newer), which runs
+on 3.14, so that's what the workflows use. `test_release.py` checks the release scripts (any change to `scripts/` or
 the release workflows), and `build_package.py` builds `dist/cwfis.zip` and checks it installs. Gitea's runner runs
 all of these on every push (`.gitea/workflows/test.yml`); on GitHub the same checks run plus Home Assistant's
 `hassfest` and the Marketplace's own checks, which come from GitHub and can only run there.
@@ -58,6 +58,14 @@ exits non-zero if any check fails.
 
 `hacs.json` at the root is the Marketplace's file: the name it lists and the oldest Home Assistant version the
 integration works with. Keep that version in step with the README's requirements.
+
+### Only the latest Home Assistant
+
+CWFIS targets the current Home Assistant release only. When a new release changes an API, move to the new way and
+raise `homeassistant` in `hacs.json` (and the README) to that release, rather than keeping code for older versions.
+Write for Home Assistant's current conventions: no `from __future__ import annotations` (Python 3.14 evaluates
+annotations lazily), `probatio` rather than `voluptuous` for schemas, and entity names and icons from
+`translations/en.json` and `icons.json` by translation key rather than in the code.
 
 ## Commits
 
@@ -103,7 +111,7 @@ installs from GitHub's releases, so every link in the docs and release notes poi
    itself: the mirror deletes tags Gitea doesn't have, and GitHub follows Gitea on its own.
 
 The Gitea workflows use no actions (`actions/checkout` and the like download from GitHub): each job runs in a plain
-image from Docker Hub (`python:3.13-bookworm`) and fetches the code from Gitea with git, so testing and releasing
+image from Docker Hub (`python:3.14-bookworm`) and fetches the code from Gitea with git, so testing and releasing
 keep working when GitHub can't be reached. Only `ruff` comes from PyPI. When the runner's jobs can't reach Gitea at
 its public address (a runner on the same Docker network as Gitea, say), set an Actions variable `GITEA_INTERNAL_URL`
 to the address they can reach (`http://gitea-server:3000`); both workflows and the publish script use it.

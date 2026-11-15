@@ -1,37 +1,41 @@
 """Base entity shared by every CWFIS sensor, binary sensor, event and image."""
 
-from __future__ import annotations
-
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, PROVINCES
-from .coordinator import CwfisCoordinator
+from .coordinator import CwfisConfigEntry, CwfisCoordinator
 
 
 class CwfisEntity(CoordinatorEntity[CwfisCoordinator]):
     """Groups all entities under one "CWFIS" service device and handles naming.
 
-    Naming rules (kept stable so entity IDs never change between versions):
-      * national and Home entities: plain name, e.g. "Active fires nearby"
-      * extra watch zones:          "Active fires nearby (Cottage)"
-      * provinces:                  "Active fires (Quebec)"
+    Names and icons come from translations/en.json and icons.json, by translation key. The key is the entity's
+    `key`, with a suffix for the entities that belong to a watch zone or a province, whose name has a placeholder:
+      * national and Home entities: key "nearby"          -> "Active fires nearby"
+      * extra watch zones:          key "nearby_zone"     -> "Active fires nearby (Cottage)"
+      * provinces:                  key "active_province" -> "Active fires (Quebec)"
+    The English names are the ones earlier versions hard-coded, so new installs get the same entity IDs.
     """
 
     _attr_has_entity_name = True
 
-    def __init__(self, entry, key: str, name: str, icon: str, zone: str = "home", province: str | None = None):
-        """Work out the name, unique ID and device for this entity."""
+    def __init__(self, entry: CwfisConfigEntry, key: str, zone: str = "home", province: str | None = None) -> None:
+        """Work out the translation key, unique ID and device for this entity."""
         super().__init__(entry.runtime_data)
-        self._key, self._zone, self._province, self._attr_icon = key, zone, province, icon
+        self._key, self._zone, self._province = key, zone, province
 
         if province:
-            label, uid = PROVINCES.get(province, province), f"{province.lower()}_{key}"
+            uid = f"{province.lower()}_{key}"
+            self._attr_translation_key = f"{key}_province"
+            self._attr_translation_placeholders = {"province": PROVINCES.get(province, province)}
         elif zone != "home":
-            label, uid = entry.runtime_data.data["zones"][zone]["name"], f"{zone}_{key}"
+            uid = f"{zone}_{key}"
+            self._attr_translation_key = f"{key}_zone"
+            self._attr_translation_placeholders = {"zone": entry.runtime_data.data["zones"][zone]["name"]}
         else:
-            label, uid = None, key
-        self._attr_name = f"{name} ({label})" if label else name
+            uid = key
+            self._attr_translation_key = key
         self._attr_unique_id = f"{entry.entry_id}_{uid}"
 
         self._attr_device_info = DeviceInfo(

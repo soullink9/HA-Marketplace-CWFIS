@@ -77,7 +77,7 @@ def state_as_float(hass, entity_id: str) -> float | None:
     """Numeric state of another Home Assistant entity, or None if it's missing/unknown/non-numeric."""
     try:
         return float(hass.states.get(entity_id).state)
-    except (AttributeError, TypeError, ValueError):
+    except AttributeError, TypeError, ValueError:
         return None
 
 

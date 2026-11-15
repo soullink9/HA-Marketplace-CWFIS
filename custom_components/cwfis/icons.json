@@ -1,0 +1,105 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "fire_upwind": {
+        "default": "mdi:weather-windy"
+      },
+      "wildfire_smoke": {
+        "default": "mdi:smoke"
+      },
+      "fire_nearby": {
+        "default": "mdi:map-marker-radius"
+      },
+      "fire_nearby_zone": {
+        "default": "mdi:map-marker-radius"
+      }
+    },
+    "event": {
+      "fire_alert": {
+        "default": "mdi:bell-alert"
+      }
+    },
+    "image": {
+      "map_fire_danger": {
+        "default": "mdi:map"
+      },
+      "map_fire_danger_tomorrow": {
+        "default": "mdi:map"
+      },
+      "map_smoke": {
+        "default": "mdi:map"
+      },
+      "map_hotspots": {
+        "default": "mdi:map"
+      }
+    },
+    "sensor": {
+      "reported_today": {
+        "default": "mdi:fire-alert"
+      },
+      "active": {
+        "default": "mdi:fire"
+      },
+      "out": {
+        "default": "mdi:fire-off"
+      },
+      "total": {
+        "default": "mdi:counter"
+      },
+      "area": {
+        "default": "mdi:texture-box"
+      },
+      "fires_vs_last_year": {
+        "default": "mdi:chart-line"
+      },
+      "area_vs_last_year": {
+        "default": "mdi:chart-areaspline"
+      },
+      "smoke_forecast": {
+        "default": "mdi:weather-hazy"
+      },
+      "active_province": {
+        "default": "mdi:fire"
+      },
+      "area_province": {
+        "default": "mdi:texture-box"
+      },
+      "nearest": {
+        "default": "mdi:map-marker-distance"
+      },
+      "nearest_zone": {
+        "default": "mdi:map-marker-distance"
+      },
+      "nearby": {
+        "default": "mdi:fire-circle"
+      },
+      "nearby_zone": {
+        "default": "mdi:fire-circle"
+      },
+      "perimeter": {
+        "default": "mdi:vector-polygon"
+      },
+      "perimeter_zone": {
+        "default": "mdi:vector-polygon"
+      },
+      "hotspots": {
+        "default": "mdi:satellite-variant"
+      },
+      "hotspots_zone": {
+        "default": "mdi:satellite-variant"
+      },
+      "prescribed": {
+        "default": "mdi:fire-truck"
+      },
+      "prescribed_zone": {
+        "default": "mdi:fire-truck"
+      },
+      "danger": {
+        "default": "mdi:gauge"
+      },
+      "danger_zone": {
+        "default": "mdi:gauge"
+      }
+    }
+  }
+}

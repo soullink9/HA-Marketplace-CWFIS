@@ -3,7 +3,7 @@
 
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 # pyflakes, pycodestyle, bugbear, import order, simplifications, comprehensions, and a docstring on everything

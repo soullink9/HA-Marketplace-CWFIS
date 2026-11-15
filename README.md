@@ -29,9 +29,9 @@ Everything appears on a single **CWFIS** device, ready for dashboards, automatio
 
 ## Install
 
-**Needs:** Home Assistant 2026.3 or newer.
+**Needs:** Home Assistant 2026.11 or newer.
 
-1. **Download.** Install **Canadian Wildland Fire Information System** from the Marketplace (**Settings → Marketplace**, Home Assistant 2026.11 and newer), or copy the [`custom_components/cwfis`](custom_components/cwfis) folder into `/config/custom_components/` and restart Home Assistant.
+1. **Download.** Install **Canadian Wildland Fire Information System** from the Marketplace (**Settings → Marketplace**), or copy the [`custom_components/cwfis`](custom_components/cwfis) folder into `/config/custom_components/` and restart Home Assistant.
 2. **Add the integration.** Go to Settings → Devices & services → Add integration → **Canadian Wildland Fire Information System**. It takes one click and uses your Home location.
 3. **Configure.** Open the integration and choose **Configure** to set your alert and smoke radius, extra zones, your wind and PM2.5 sensors, provinces and maps. The [Settings](docs/Settings.md) page helps you pick sensible distances.
 

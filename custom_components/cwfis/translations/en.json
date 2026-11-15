@@ -40,8 +40,23 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "fire_upwind": {
+        "name": "Fire upwind"
+      },
+      "wildfire_smoke": {
+        "name": "Wildfire smoke"
+      },
+      "fire_nearby": {
+        "name": "Fire within alert radius"
+      },
+      "fire_nearby_zone": {
+        "name": "Fire within alert radius ({zone})"
+      }
+    },
     "event": {
       "fire_alert": {
+        "name": "Fire alert",
         "state_attributes": {
           "event_type": {
             "state": {
@@ -52,6 +67,105 @@
             }
           }
         }
+      }
+    },
+    "image": {
+      "map_fire_danger": {
+        "name": "Fire danger map"
+      },
+      "map_fire_danger_tomorrow": {
+        "name": "Fire danger forecast map (tomorrow)"
+      },
+      "map_smoke": {
+        "name": "Smoke map"
+      },
+      "map_hotspots": {
+        "name": "Hotspots map (24h)"
+      }
+    },
+    "sensor": {
+      "reported_today": {
+        "name": "Reported today"
+      },
+      "active": {
+        "name": "Active fires"
+      },
+      "out": {
+        "name": "Out fires"
+      },
+      "total": {
+        "name": "Total fires"
+      },
+      "area": {
+        "name": "Area burned"
+      },
+      "fires_vs_last_year": {
+        "name": "Fires vs last year"
+      },
+      "area_vs_last_year": {
+        "name": "Area burned vs last year"
+      },
+      "smoke_forecast": {
+        "name": "Smoke forecast PM2.5 (24h max)"
+      },
+      "active_province": {
+        "name": "Active fires ({province})"
+      },
+      "area_province": {
+        "name": "Area burned ({province})"
+      },
+      "nearest": {
+        "name": "Nearest active fire"
+      },
+      "nearest_zone": {
+        "name": "Nearest active fire ({zone})"
+      },
+      "nearby": {
+        "name": "Active fires nearby"
+      },
+      "nearby_zone": {
+        "name": "Active fires nearby ({zone})"
+      },
+      "perimeter": {
+        "name": "Nearest fire perimeter"
+      },
+      "perimeter_zone": {
+        "name": "Nearest fire perimeter ({zone})"
+      },
+      "hotspots": {
+        "name": "Hotspots nearby (24h)"
+      },
+      "hotspots_zone": {
+        "name": "Hotspots nearby (24h) ({zone})"
+      },
+      "prescribed": {
+        "name": "Prescribed burns nearby"
+      },
+      "prescribed_zone": {
+        "name": "Prescribed burns nearby ({zone})"
+      },
+      "danger": {
+        "name": "Fire danger"
+      },
+      "danger_zone": {
+        "name": "Fire danger ({zone})"
+      }
+    }
+  },
+  "selector": {
+    "map_fires": {
+      "options": {
+        "all": "All active fires",
+        "nearby": "Only fires within alert radius",
+        "none": "None"
+      }
+    },
+    "map_images": {
+      "options": {
+        "fire_danger": "Fire danger map",
+        "fire_danger_tomorrow": "Fire danger forecast map (tomorrow)",
+        "smoke": "Smoke map",
+        "hotspots": "Hotspots map (24h)"
       }
     }
   }

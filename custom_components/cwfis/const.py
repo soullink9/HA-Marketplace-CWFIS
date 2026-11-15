@@ -90,11 +90,15 @@ PROVINCES = {
     "YT": "Yukon",
 }
 
-# Optional map images: key -> (entity name, WMS data layer).
+# Optional map images: key -> WMS data layer. Their names are in translations/en.json (entity.image.map_<key>, and
+# selector.map_images for the Configure form).
 # None means "tomorrow's fire danger forecast", whose layer name contains the date.
 MAPS = {
-    "fire_danger": ("Fire danger map", "public:fdr"),
-    "fire_danger_tomorrow": ("Fire danger forecast map (tomorrow)", None),
-    "smoke": ("Smoke map", "public:currentSmoke"),
-    "hotspots": ("Hotspots map (24h)", "public:hotspots_24h"),
+    "fire_danger": "public:fdr",
+    "fire_danger_tomorrow": None,
+    "smoke": "public:currentSmoke",
+    "hotspots": "public:hotspots_24h",
 }
+
+# Which fires get a map marker (Configure -> Fires on map); labels in translations/en.json under selector.map_fires.
+MAP_FIRES_MODES = ["all", "nearby", "none"]

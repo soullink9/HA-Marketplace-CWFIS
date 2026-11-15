@@ -1,11 +1,14 @@
 # Installation
 
-**Needs:** Home Assistant **2026.3 or newer**, which is the first version that shows the integration's built-in icon. It was developed and tested on Core 2026.9.4. Home Assistant must be able to reach `geoserver.cwfif.nrcan.gc.ca`, `cwfis.cfs.nrcan.gc.ca` and `air-quality-api.open-meteo.com`.
+**Needs:** Home Assistant **2026.11 or newer**. CWFIS follows the latest Home Assistant release only, and each release
+says in the Marketplace which Home Assistant it needs, so the Marketplace never offers you one your Home Assistant
+can't run. Home Assistant must be able to reach `geoserver.cwfif.nrcan.gc.ca`, `cwfis.cfs.nrcan.gc.ca` and `air-quality-api.open-meteo.com`.
 
 ## From the Marketplace
 
-In Home Assistant 2026.11 and newer, open **Settings → Marketplace**, search for **Canadian Wildland Fire Information System** and install it, then
-restart Home Assistant. Updates then show up under **Settings → Updates**.
+Open **Settings → Marketplace**, search for **Canadian Wildland Fire Information System** and install it. The first
+install needs no restart. Updates show up under **Settings → Updates**, and each update needs a restart, which the
+Marketplace offers as a repair.
 
 If it isn't listed yet, add it from its link instead: this repository's address,
 `https://github.com/soullink9/HA-Marketplace-CWFIS`. Adding from a link needs Home Assistant to be connected to GitHub.

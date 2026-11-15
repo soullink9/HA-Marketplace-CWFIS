@@ -9,17 +9,22 @@ Fires an event when, for any fire inside any zone's alert radius:
 The entity's state is the time of the last event; use it as an automation trigger.
 """
 
-from __future__ import annotations
-
 from homeassistant.components.event import EventEntity
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import GROWTH_FACTOR, GROWTH_MIN_HA, STAGES
+from .coordinator import CwfisConfigEntry
 from .entity import CwfisEntity
 from .helpers import fire_info
 
+# Every entity reads the coordinator's data, so Home Assistant needn't limit how many update at once.
+PARALLEL_UPDATES = 0
 
-async def async_setup_entry(hass, entry, async_add_entities):
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: CwfisConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
+) -> None:
     """A single Fire alert entity covers every zone."""
     async_add_entities([FireAlert(entry)])
 
@@ -27,12 +32,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class FireAlert(CwfisEntity, EventEntity):
     """Compares each update with the previous one and fires the matching events."""
 
-    _attr_translation_key = "fire_alert"
     _attr_event_types = ["new_fire_nearby", "stage_changed", "fire_grew", "fire_out"]
 
     def __init__(self, entry):
         """Take a first snapshot of nearby fires to compare future updates against."""
-        super().__init__(entry, "fire_alert", "Fire alert", "mdi:bell-alert")
+        super().__init__(entry, "fire_alert")
         # Start from what's already nearby so a restart doesn't announce every fire as "new".
         self._seen = self._snapshot()
 

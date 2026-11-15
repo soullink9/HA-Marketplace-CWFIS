@@ -61,11 +61,10 @@ jobs:
         with:
           ref: ${{ matrix.tag }} # the release is built from its tag, as on Gitea
 
-      # CWFIS supports Home Assistant 2026.3 and newer, the oldest of which can run on Python 3.13, so
-      # that's what the tests prove it works on
+      # CWFIS needs Home Assistant 2026.11 or newer, which runs on Python 3.14, so that's what the tests use
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - name: Check the version and take the release notes from CHANGELOG.md
         id: notes

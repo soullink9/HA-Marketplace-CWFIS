@@ -1,9 +1,8 @@
 """Binary sensors: fire within alert radius, fire upwind, wildfire smoke."""
 
-from __future__ import annotations
-
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
@@ -16,11 +15,17 @@ from .const import (
     MAX_LISTED_FIRES,
     UPWIND_SPREAD,
 )
+from .coordinator import CwfisConfigEntry
 from .entity import CwfisEntity
 from .helpers import fire_info, state_as_float
 
+# Every entity reads the coordinator's data, so Home Assistant needn't limit how many update at once.
+PARALLEL_UPDATES = 0
 
-async def async_setup_entry(hass, entry, async_add_entities):
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: CwfisConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
+) -> None:
     """One "Fire within alert radius" per zone; upwind/smoke only when their source sensors are set."""
     opts = entry.options
     entities = [FireNearby(entry, zone) for zone in entry.runtime_data.data["zones"]]
@@ -51,7 +56,7 @@ class FireNearby(CwfisEntity, BinarySensorEntity):
 
     def __init__(self, entry, zone):
         """Remember the alert radius so it can be shown as an attribute."""
-        super().__init__(entry, "fire_nearby", "Fire within alert radius", "mdi:map-marker-radius", zone)
+        super().__init__(entry, "fire_nearby", zone)
         self._radius = entry.options.get(CONF_RADIUS, DEFAULT_RADIUS)
 
     @property
@@ -97,7 +102,7 @@ class FireUpwind(WatchingEntity):
 
     def __init__(self, entry, wind):
         """Watch the wind sensor so the state updates as soon as the wind changes."""
-        super().__init__(entry, "fire_upwind", "Fire upwind", "mdi:weather-windy")
+        super().__init__(entry, "fire_upwind")
         self._wind = wind
         self._watch = [wind]
 
@@ -124,7 +129,7 @@ class WildfireSmoke(WatchingEntity):
 
     def __init__(self, entry, pm25, wind, threshold):
         """Watch the PM2.5 sensor (and wind sensor, if any)."""
-        super().__init__(entry, "wildfire_smoke", "Wildfire smoke", "mdi:smoke")
+        super().__init__(entry, "wildfire_smoke")
         self._pm25, self._wind, self._threshold = pm25, wind, threshold
         self._watch = [e for e in (pm25, wind) if e]
 

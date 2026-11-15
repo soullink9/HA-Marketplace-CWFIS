@@ -11,7 +11,8 @@ Exit code is 0 when every scenario passes, 1 otherwise.
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+import json
 import logging
 import os
 from pathlib import Path
@@ -114,7 +115,7 @@ SESSION["factory"] = FakeSession
 # ---------------------------------------------------------------------------
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components"))
 import cwfis  # noqa: E402
-from cwfis import binary_sensor, event, geo_location, image, sensor  # noqa: E402
+from cwfis import binary_sensor, const, event, geo_location, image, sensor  # noqa: E402
 
 # Home is a different random point on every run, and every fire, zone, hotspot and perimeter below is placed relative
 # to it, so the results never depend on one real place. Set CWFIS_TEST_SEED to replay a particular run.
@@ -217,6 +218,75 @@ EXPECTED_UNIQUE_IDS = sorted(
     + ["E_fire_upwind", "E_wildfire_smoke", "E_fire_alert", "E_map_fire_danger", "E_map_fire_danger_tomorrow"]
 )
 
+# Entity names, by unique ID without the entry ID. A new install's entity IDs come from them, so they stay the same
+# from version to version too. They come from translations/en.json, with icons from icons.json (see entity.py).
+EXPECTED_NAMES = {
+    "active": "Active fires",
+    "area": "Area burned",
+    "area_vs_last_year": "Area burned vs last year",
+    "danger": "Fire danger",
+    "fire_alert": "Fire alert",
+    "fire_nearby": "Fire within alert radius",
+    "fire_upwind": "Fire upwind",
+    "fires_vs_last_year": "Fires vs last year",
+    "hotspots": "Hotspots nearby (24h)",
+    "map_fire_danger": "Fire danger map",
+    "map_fire_danger_tomorrow": "Fire danger forecast map (tomorrow)",
+    "nearby": "Active fires nearby",
+    "nearest": "Nearest active fire",
+    "on_active": "Active fires (Ontario)",
+    "on_area": "Area burned (Ontario)",
+    "out": "Out fires",
+    "perimeter": "Nearest fire perimeter",
+    "prescribed": "Prescribed burns nearby",
+    "qc_active": "Active fires (Quebec)",
+    "qc_area": "Area burned (Quebec)",
+    "reported_today": "Reported today",
+    "smoke_forecast": "Smoke forecast PM2.5 (24h max)",
+    "total": "Total fires",
+    "wildfire_smoke": "Wildfire smoke",
+    "zone.cottage_danger": "Fire danger (Cottage)",
+    "zone.cottage_fire_nearby": "Fire within alert radius (Cottage)",
+    "zone.cottage_hotspots": "Hotspots nearby (24h) (Cottage)",
+    "zone.cottage_nearby": "Active fires nearby (Cottage)",
+    "zone.cottage_nearest": "Nearest active fire (Cottage)",
+    "zone.cottage_perimeter": "Nearest fire perimeter (Cottage)",
+    "zone.cottage_prescribed": "Prescribed burns nearby (Cottage)",
+}
+INTEGRATION_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "cwfis"
+TRANSLATIONS = json.loads((INTEGRATION_DIR / "translations" / "en.json").read_text(encoding="utf-8"))
+ICONS = json.loads((INTEGRATION_DIR / "icons.json").read_text(encoding="utf-8"))
+
+
+def naming_problems(entities):
+    """Check every entity's name and icon resolve from its translation key, to the names in EXPECTED_NAMES."""
+    problems = []
+    for entity in entities:
+        if isinstance(entity, geo_location.FireMarker):
+            continue  # markers are named after their fire
+        platform, key = type(entity).__module__.rsplit(".", 1)[-1], entity._attr_translation_key
+        template = TRANSLATIONS["entity"].get(platform, {}).get(key, {}).get("name")
+        if template is None:
+            problems.append(f"{platform}.{key} has no name in translations/en.json")
+            continue
+        name = template.format(**(getattr(entity, "_attr_translation_placeholders", None) or {}))
+        uid = entity._attr_unique_id.removeprefix("E_")
+        if name != EXPECTED_NAMES.get(uid):
+            problems.append(f"{uid} is named {name!r}, expected {EXPECTED_NAMES.get(uid)!r}")
+        if "default" not in ICONS["entity"].get(platform, {}).get(key, {}):
+            problems.append(f"{platform}.{key} has no icon in icons.json")
+    return problems
+
+
+def selector_problems():
+    """Every choice in the Configure form's lists has a label in translations/en.json."""
+    problems = []
+    for selector, options in (("map_fires", const.MAP_FIRES_MODES), ("map_images", list(const.MAPS))):
+        labels = TRANSLATIONS["selector"][selector]["options"]
+        if sorted(labels) != sorted(options):
+            problems.append(f"selector.{selector} labels {sorted(labels)} != options {sorted(options)}")
+    return problems
+
 
 async def read_everything(entities):
     """Read each entity's state and attributes, as the HA frontend would. Returns {unique id: state}."""
@@ -262,6 +332,7 @@ async def scenario(name, start, data, then=None, expect_events=None, expect=None
         ids = sorted(e._attr_unique_id for e in entities if hasattr(e, "_attr_unique_id"))
         if ids != EXPECTED_UNIQUE_IDS:
             problems.append(f"unique IDs changed: {sorted(set(ids) ^ set(EXPECTED_UNIQUE_IDS))}")
+        problems += naming_problems(entities)
         states = await read_everything(entities)
 
         if then:
@@ -292,7 +363,7 @@ async def scenario(name, start, data, then=None, expect_events=None, expect=None
 
 
 async def main() -> bool:
-    utc = timezone.utc
+    utc = UTC
     day = datetime(2026, 10, 12, 15, tzinfo=utc)
     results = []
 
@@ -449,6 +520,12 @@ async def main() -> bool:
             + [("fire_out", "2026_QC_2")] * 2,
         )
     )
+
+    problems = selector_problems()
+    print(
+        ("PASS  " if not problems else "FAIL  ") + "Configure form labels" + "".join(f"\n      - {p}" for p in problems)
+    )
+    results.append(not problems)
 
     print(f"\n{sum(results)}/{len(results)} scenarios passed (Home at {HOME}, CWFIS_TEST_SEED={SEED})")
     return all(results)

@@ -1,9 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 (2026-11-15)
+
+- **Needs Home Assistant 2026.11 or newer.** CWFIS now follows the latest Home Assistant release only, and the
+  Marketplace won't offer this version to older ones. Nothing changes in how it works, and entity IDs and history are
+  kept.
+- Entity names and icons now come from the integration's translations, the way Home Assistant expects, so names
+  follow Home Assistant's naming of devices and entities. The English names are unchanged.
+- The Configure form's lists (Fires on map, Map images) are translated the same way.
+- Built for Home Assistant 2026.11: `probatio` for the settings form, Python 3.14, typed setup throughout, and the
+  map images download through the same connection as the rest of the data.
 
 ### Repository
 
+- Every check and release runs on Python 3.14, the version Home Assistant 2026.11 runs on.
+- The tests also check that every entity's name and icon resolve, and that the names never change.
 - Gitea is the main copy: its runner checks every push and publishes releases (`.gitea/workflows/`), with nothing
   downloaded from GitHub, so it keeps working when GitHub can't be reached. Gitea push-mirrors to GitHub, and every
   push from it publishes on GitHub the releases GitHub doesn't have yet, with the same files and notes, where the

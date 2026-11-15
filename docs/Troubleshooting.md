@@ -25,7 +25,7 @@ It means a fire is inside *your* alert radius. Check the `alert_radius_km` and `
 A large smoke radius almost always contains a fire somewhere to the west or northwest. Reduce the smoke radius, or rely on **Wildfire smoke**, which also needs your PM2.5 sensor to read high.
 
 **The icon doesn't show.**
-Built-in icons need Home Assistant 2026.3 or newer. After updating, hard-refresh the browser (Ctrl+Shift+R), because browsers cache integration icons.
+After updating, hard-refresh the browser (Ctrl+Shift+R), because browsers cache integration icons.
 
 ## Known issues
 

@@ -29,7 +29,8 @@ custom_components/cwfis/
 ├── geo_location.py             map markers
 ├── image.py                    map images
 ├── config_flow.py              setup and the Configure form
-├── translations/en.json        text for the Configure form and event types
+├── translations/en.json        entity names, Configure form text and event types
+├── icons.json                  entity icons, by translation key
 └── brand/                      integration icon (icon.png, icon@2x.png)
 ```
 
@@ -54,13 +55,17 @@ custom_components/cwfis/
 
 ## Entity naming and IDs
 
-`entity.py` builds every name and unique ID:
+`entity.py` gives every entity a translation key and unique ID. The names are in `translations/en.json` and the icons
+in `icons.json`, under `entity.<platform>.<translation key>`:
 
-- National and Home entities use the plain name, with unique ID `<entry id>_<key>`.
-- Extra zones get `(<zone name>)` added to the name, with unique ID `<entry id>_<zone id>_<key>`.
-- Provinces get `(<province>)` added to the name, with unique ID `<entry id>_<code>_<key>`.
+- National and Home entities use the key itself (`nearby`, "Active fires nearby"), with unique ID `<entry id>_<key>`.
+- Extra zones use `<key>_zone`, whose name has a `{zone}` placeholder ("Active fires nearby ({zone})"), with unique
+  ID `<entry id>_<zone id>_<key>`.
+- Provinces use `<key>_province`, whose name has a `{province}` placeholder ("Active fires ({province})"), with
+  unique ID `<entry id>_<code>_<key>`.
 
-Unique IDs must never change. `tests/test_integration.py` fails if they do.
+Unique IDs and the English names must never change: a new install's entity IDs come from the names.
+`tests/test_integration.py` fails if either does, or if an entity has no name or icon.
 
 Map markers (`geo_location`) have no unique ID, by Home Assistant's design. They're created and removed on every update, so they never leave orphaned entities behind.
 
@@ -90,7 +95,7 @@ Gitea is the main copy of this repository; it push-mirrors to GitHub, the public
 
 | File | What it does |
 |---|---|
-| `.gitea/workflows/test.yml` | Runs every check on each push to Gitea (lint, the tests and building the zip, on Python 3.13), with no actions downloaded from GitHub |
+| `.gitea/workflows/test.yml` | Runs every check on each push to Gitea (lint, the tests and building the zip, on Python 3.14), with no actions downloaded from GitHub |
 | `.gitea/workflows/release.yml` | Publishes a release on Gitea (Run workflow button, or a pushed version tag); its tag then reaches GitHub through the push mirror |
 | `.github/workflows/release.yml` | After any push from Gitea's mirror (or from its Run workflow button), publishes every version tag GitHub has no release for yet, with the same files, title and notes as Gitea's: the copy the Marketplace installs from |
 | `.github/workflows/ci.yml` | GitHub's checks on every push: lint, the tests and Home Assistant's `hassfest` (which comes from GitHub, so it runs only there) |

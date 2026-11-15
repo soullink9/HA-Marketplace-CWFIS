@@ -9,17 +9,12 @@ File layout:
   config_flow.py    one-click setup and the Configure (options) form
 """
 
-from __future__ import annotations
-
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .coordinator import CwfisCoordinator
+from .coordinator import CwfisConfigEntry, CwfisCoordinator
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.EVENT, Platform.GEO_LOCATION, Platform.IMAGE, Platform.SENSOR]
-
-type CwfisConfigEntry = ConfigEntry[CwfisCoordinator]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CwfisConfigEntry) -> bool:

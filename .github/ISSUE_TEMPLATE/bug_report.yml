@@ -7,7 +7,7 @@ body:
     attributes:
       label: Versions
       description: Home Assistant (Settings → About) and this integration ("version" in custom_components/cwfis/manifest.json).
-      placeholder: Home Assistant 2026.9.4, CWFIS 1.0.0
+      placeholder: Home Assistant 2026.11.1, CWFIS 1.3.0
     validations:
       required: true
   - type: textarea

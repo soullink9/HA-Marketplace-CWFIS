@@ -5,7 +5,7 @@ forward), with "local" time a fixed UTC-5 to keep the maths simple; EVENTS colle
 fires. Home Assistant's client session is whatever SESSION["factory"]() returns: the test points it at its fake servers.
 """
 
-from datetime import timedelta, timezone
+from datetime import UTC, timedelta, timezone
 import enum
 import math
 import sys
@@ -102,6 +102,7 @@ stub(
 SESSION = {"factory": None}
 stub("homeassistant.helpers.aiohttp_client", async_get_clientsession=lambda hass: SESSION["factory"]())
 stub("homeassistant.helpers.event", async_track_state_change_event=lambda *args: None)
+stub("homeassistant.helpers.entity_platform", AddConfigEntryEntitiesCallback=object)
 
 # Controllable clock. "Local" time is a fixed UTC-5 to keep the maths simple.
 CLOCK = {"now": None}
@@ -111,7 +112,7 @@ stub(
     now=lambda: CLOCK["now"].astimezone(LOCAL),
     utcnow=lambda: CLOCK["now"],
     start_of_local_day=lambda: CLOCK["now"].astimezone(LOCAL).replace(hour=0, minute=0, second=0, microsecond=0),
-    as_utc=lambda d: d.astimezone(timezone.utc),
+    as_utc=lambda d: d.astimezone(UTC),
     as_local=lambda d: d.astimezone(LOCAL),
 )
 sys.modules["homeassistant.util"].dt = sys.modules["homeassistant.util.dt"]

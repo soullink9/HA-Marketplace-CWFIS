@@ -10,10 +10,8 @@ Data flow per update:
   3. Distances/bearings from Home and every extra watch zone to each active fire.
 """
 
-from __future__ import annotations
-
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import logging
 from math import cos, radians
 
@@ -89,10 +87,15 @@ def _utc_stamp(when: datetime) -> str:
     return dt_util.as_utc(when).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+type CwfisConfigEntry = ConfigEntry[CwfisCoordinator]
+
+
 class CwfisCoordinator(DataUpdateCoordinator[dict]):
     """Fetches and combines all CWFIS data for the integration."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    config_entry: CwfisConfigEntry
+
+    def __init__(self, hass: HomeAssistant, entry: CwfisConfigEntry) -> None:
         """Read the options once; the integration reloads whenever they change."""
         super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=UPDATE_INTERVAL)
         self.session = async_get_clientsession(hass)
@@ -345,7 +348,7 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
 
         now = dt_util.utcnow()
         series = [
-            (datetime.fromisoformat(t).replace(tzinfo=timezone.utc), value)
+            (datetime.fromisoformat(t).replace(tzinfo=UTC), value)
             for t, value in zip(hourly["time"], hourly["pm2_5"])
             if value is not None
         ]

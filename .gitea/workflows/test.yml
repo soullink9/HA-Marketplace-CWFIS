@@ -21,11 +21,10 @@ env:
 
 jobs:
   tests:
-    # CWFIS supports Home Assistant 2026.3 and newer, the oldest of which can run on Python 3.13, so
-    # that's what the tests prove it works on
+    # CWFIS needs Home Assistant 2026.11 or newer, which runs on Python 3.14, so that's what the tests use
     runs-on: ubuntu-latest
     container:
-      image: python:3.13-bookworm
+      image: python:3.14-bookworm
     steps:
       - name: Get the code
         env:

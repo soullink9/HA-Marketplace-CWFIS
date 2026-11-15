@@ -1,52 +1,53 @@
 """Sensors: national summary, season comparison, smoke forecast, provinces and per-zone proximity."""
 
-from __future__ import annotations
-
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import PERCENTAGE, UnitOfDensity, UnitOfLength
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import CONF_PROVINCES, MAX_LISTED_FIRES
+from .coordinator import CwfisConfigEntry
 from .entity import CwfisEntity
 from .helpers import fire_info
+
+# Every entity reads the coordinator's data, so Home Assistant needn't limit how many update at once.
+PARALLEL_UPDATES = 0
 
 MEASUREMENT = SensorStateClass.MEASUREMENT
 KM, DISTANCE = UnitOfLength.KILOMETERS, SensorDeviceClass.DISTANCE
 
-# Sensor tables: key -> (name, unit, icon, device class, state class).
+# Sensor tables: key -> (unit, device class, state class). Names and icons are in translations/en.json and
+# icons.json under the same key (with "_province" or "_zone" added for those sensors).
 # National sensors read coordinator.data[key]; attributes come from coordinator.data[f"{key}_attrs"].
 NATIONAL = {
-    "reported_today": ("Reported today", "fires", "mdi:fire-alert", None, MEASUREMENT),
-    "active": ("Active fires", "fires", "mdi:fire", None, MEASUREMENT),
-    "out": ("Out fires", "fires", "mdi:fire-off", None, MEASUREMENT),
-    "total": ("Total fires", "fires", "mdi:counter", None, MEASUREMENT),
-    "area": ("Area burned", "ha", "mdi:texture-box", None, MEASUREMENT),
-    "fires_vs_last_year": ("Fires vs last year", PERCENTAGE, "mdi:chart-line", None, MEASUREMENT),
-    "area_vs_last_year": ("Area burned vs last year", PERCENTAGE, "mdi:chart-areaspline", None, MEASUREMENT),
-    "smoke_forecast": (
-        "Smoke forecast PM2.5 (24h max)",
-        UnitOfDensity.MICROGRAMS_PER_CUBIC_METER,
-        "mdi:weather-hazy",
-        SensorDeviceClass.PM25,
-        MEASUREMENT,
-    ),
+    "reported_today": ("fires", None, MEASUREMENT),
+    "active": ("fires", None, MEASUREMENT),
+    "out": ("fires", None, MEASUREMENT),
+    "total": ("fires", None, MEASUREMENT),
+    "area": ("ha", None, MEASUREMENT),
+    "fires_vs_last_year": (PERCENTAGE, None, MEASUREMENT),
+    "area_vs_last_year": (PERCENTAGE, None, MEASUREMENT),
+    "smoke_forecast": (UnitOfDensity.MICROGRAMS_PER_CUBIC_METER, SensorDeviceClass.PM25, MEASUREMENT),
 }
 # One pair per province picked under Configure -> Province sensors.
 PROVINCE = {
-    "active": ("Active fires", "fires", "mdi:fire", None, MEASUREMENT),
-    "area": ("Area burned", "ha", "mdi:texture-box", None, MEASUREMENT),
+    "active": ("fires", None, MEASUREMENT),
+    "area": ("ha", None, MEASUREMENT),
 }
 # One set for Home and for every extra watch zone.
 PER_ZONE = {
-    "nearest": ("Nearest active fire", KM, "mdi:map-marker-distance", DISTANCE, MEASUREMENT),
-    "nearby": ("Active fires nearby", "fires", "mdi:fire-circle", None, MEASUREMENT),
-    "perimeter": ("Nearest fire perimeter", KM, "mdi:vector-polygon", DISTANCE, MEASUREMENT),
-    "hotspots": ("Hotspots nearby (24h)", "hotspots", "mdi:satellite-variant", None, MEASUREMENT),
-    "prescribed": ("Prescribed burns nearby", "burns", "mdi:fire-truck", None, MEASUREMENT),
-    "danger": ("Fire danger", None, "mdi:gauge", None, None),  # text state: Low ... Extreme
+    "nearest": (KM, DISTANCE, MEASUREMENT),
+    "nearby": ("fires", None, MEASUREMENT),
+    "perimeter": (KM, DISTANCE, MEASUREMENT),
+    "hotspots": ("hotspots", None, MEASUREMENT),
+    "prescribed": ("burns", None, MEASUREMENT),
+    "danger": (None, None, None),  # text state: Low ... Extreme
 }
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant, entry: CwfisConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
+) -> None:
     """Create national, province and per-zone sensors."""
     entities: list[CwfisSensor] = [NationalSensor(entry, key) for key in NATIONAL]
     for code in entry.options.get(CONF_PROVINCES, []):
@@ -60,9 +61,9 @@ class CwfisSensor(CwfisEntity, SensorEntity):
     """Common setup: unpack one row of the tables above."""
 
     def __init__(self, entry, key, spec, **where):
-        """Apply the name, unit, icon, device class and state class from the table row."""
-        name, unit, icon, self._attr_device_class, self._attr_state_class = spec
-        super().__init__(entry, key, name, icon, **where)
+        """Apply the unit, device class and state class from the table row."""
+        unit, self._attr_device_class, self._attr_state_class = spec
+        super().__init__(entry, key, **where)
         self._attr_native_unit_of_measurement = unit
 
 
