@@ -15,7 +15,7 @@ Distance sensors show miles automatically if Home Assistant uses US units. Attri
 | Area burned | ha | This season's total. The `by_province_ha` attribute breaks it down by province. |
 | Fires vs last year | % | Total fires compared with the same moment last year. Attributes give both numbers. |
 | Area burned vs last year | % | Area burned compared with the same moment last year. Attributes give both numbers. |
-| Smoke forecast PM2.5 (24h max) | µg/m³ | Highest forecast PM2.5 at Home over the next 24 hours. Attributes give `peak_time_24h`, `max_48h` and `peak_time_48h`. |
+| Smoke forecast PM2.5 (24h max) | µg/m³ | Highest forecast PM2.5 at Home over the next 24 hours. Every zone's forecast is also used by its **Smoke impact** sensor. Attributes give `peak_time_24h`, `max_48h` and `peak_time_48h`. |
 
 ## Per-zone sensors
 
@@ -29,6 +29,17 @@ There's one set for Home and one for each extra watch zone.
 | Hotspots nearby (24h) | hotspots | Satellite heat detections inside the alert radius. These often show a new fire hours before it's reported. |
 | Prescribed burns nearby | burns | Planned burns inside the alert radius. |
 | Fire danger | text | Low, Moderate, High, Very high or Extreme. Only available for locations inside Canada. |
+
+## Local impact sensors
+
+There's one pair for Home and one for each extra watch zone. They turn the numbers above into a level you can act on, with an `advice` attribute saying what to do. Far from Canada, **Fire threat** usually stays at **None** and **Smoke impact** is the one to watch; close to a fire, it's the other way round.
+
+| Name | States | Notes |
+|---|---|---|
+| Smoke impact | US AQI: Good, Moderate, Unhealthy for sensitive groups, Unhealthy, Very unhealthy, Hazardous. Canada's AQHI: Low risk, Moderate risk, High risk, Very high risk. | The worse of the air **now** and the forecast peak over the **next 24 hours**, so it warns before smoke arrives. "Now" is your own PM2.5 sensor for Home when one is set, otherwise the forecast. The scale is picked under [Settings](Settings.md). Attributes: `scale`, `index` (the AQI or AQHI number), `severity`, `advice`, `level_now`, `pm25_now`, `pm25_now_source` (`sensor` or `forecast`), `pm25_max_24h` and `peak_time_24h`. |
+| Fire threat | None, Watch, Warning, Danger | See [How the Numbers Work](How-the-Numbers-Work.md#local-impact) for the rules. Attributes: `severity`, `reason`, `advice`, `danger_distance_km`, `warning_distance_km`, `nearest_fire`, `nearest_perimeter_km`, `nearest_hotspot_km` and `fire_danger`. |
+
+`severity` is the level's position (0 is the best), so automations can tell whether things got better or worse. Both sensors are a guide, not an official warning: always follow your local authorities.
 
 ## Province sensors
 

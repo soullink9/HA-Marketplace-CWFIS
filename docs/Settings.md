@@ -6,7 +6,10 @@ Open **Settings → Devices & services → Canadian Wildland Fire Information Sy
 |---|---|---|
 | Alert radius | 250 km | Agency-reported fires within this distance of a zone count as "nearby" and raise [Fire alert](Entities.md#fire-alert-event) events. Hotspots, perimeters and prescribed burns are also counted within this distance. |
 | Extra watch zones | none | Any of your Home Assistant zones. Each one gets its own set of proximity sensors. Home is always included. |
+| Fire threat: danger distance | 25 km | **Fire threat** is **Danger** when a fire that isn't under control, or a fire perimeter, is this close to a zone. |
+| Fire threat: warning distance | 50 km | **Fire threat** is **Warning** when any active fire, perimeter or satellite hotspot is this close. It must be at least the danger distance. |
 | Smoke radius | 1000 km | How far away a fire can be and still count as a possible smoke source for **Fire upwind** and **Wildfire smoke**. |
+| Air quality scale | Automatic | The scale **Smoke impact** uses: the **US Air Quality Index** (EPA) or **Canada's Air Quality Health Index** (AQHI). Automatic picks the AQHI when Home Assistant's country (Settings → System → General) is Canada, and the US AQI otherwise. |
 | Wind direction sensor | none | A sensor reporting the direction the wind blows **from**, in degrees. Most weather stations report it this way. Enables **Fire upwind**. |
 | PM2.5 sensor | none | An air-quality PM2.5 sensor, for example from Home Assistant's built-in AirNow or PurpleAir integrations. Enables **Wildfire smoke**. |
 | PM2.5 smoke threshold | 35 µg/m³ | A PM2.5 reading at or above this counts as smoky. 35 µg/m³ is the US EPA 24-hour standard. |
@@ -31,5 +34,7 @@ Pick distances that suit where you live. As a guide, here are distances from sou
 
 - **Alert radius:** set this to the distance at which a fire would genuinely matter to you. If it's set too wide, you'll get alerts about the routine fires that burn in the far north all summer. From southern New England, about **600 km** covers southern Quebec and the Maritimes.
 - **Smoke radius:** much of the smoke that has reached the US Northeast came from central and northern Quebec, often more than 1,000 km away. About **1,500 km** covers Quebec's main fire belt, northern Ontario and the Maritimes. You can set it wider, but **Fire upwind** will then be on far more often, because prevailing winds come from the west and northwest. **Wildfire smoke** still turns on only when your own PM2.5 sensor actually reads high.
+
+- **Fire threat distances:** the defaults suit most places. In remote areas where help is far away, or where fires spread fast (grassland, dry forest), you may want both larger. Remember the alert radius sets the outer edge for **Watch**.
 
 If you live in Canada, a much smaller alert radius (for example 50–150 km) and a smoke radius of a few hundred kilometres usually make more sense.

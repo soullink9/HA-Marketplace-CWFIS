@@ -7,7 +7,7 @@ There are no accounts, API keys, analytics or tracking. Nothing is stored anywhe
 | `geoserver.cwfif.nrcan.gc.ca` (Natural Resources Canada) | Search filters only (fire year and date), no location | Reported fires, prescribed burns and last year's numbers | Every 30 minutes. Last year's numbers are fetched once a day. |
 | `cwfis.cfs.nrcan.gc.ca` (Natural Resources Canada) | A search box around Home and each watch zone (your radius, so roughly where you are) | Hotspots, perimeters and the fire danger at each zone | Every 30 minutes |
 | `cwfis.cfs.nrcan.gc.ca` (Natural Resources Canada) | A fixed Canada-wide map request, no location | Map images, only if you've turned them on | When an image is viewed, at most once per update |
-| `air-quality-api.open-meteo.com` (Open-Meteo) | Your Home latitude and longitude | The PM2.5 smoke forecast | Every 30 minutes |
+| `air-quality-api.open-meteo.com` (Open-Meteo) | The latitude and longitude of Home and each watch zone | The PM2.5 smoke forecast for each zone | Every 30 minutes |
 
 Like any web request, these servers also see your public IP address. Your wind and PM2.5 sensors are read locally and never sent anywhere.
 

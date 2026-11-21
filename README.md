@@ -20,8 +20,9 @@ Canada's national wildfire data in Home Assistant. See the national fire summary
 - **This season against last year**, at exactly the same point in the season.
 - A **per-province breakdown**, with optional sensors for the provinces you care about.
 - **How close fires are** to Home and to any other zones you pick (a cottage, family, a trip): the nearest fire, fires inside your alert radius, satellite hotspots and fire perimeters, prescribed burns and the local fire danger.
+- **What it means for you**: a **Smoke impact** level (US AQI or Canada's AQHI) and a **Fire threat** level (None, Watch, Warning or Danger) for each zone, each with plain-language advice, plus a ready-made dashboard card and a [notification blueprint](docs/Dashboards-and-Automations.md#local-impact-alerts).
 - **Fire alerts**: a new fire near you, a change in its stage of control, a big jump in size, or a fire declared out.
-- **Smoke**: a 24- and 48-hour PM2.5 forecast for Home, a **fire upwind** check using your own wind sensor, and a **wildfire smoke** check using your own air-quality sensor.
+- **Smoke**: a 24- and 48-hour PM2.5 forecast for every zone, a **fire upwind** check using your own wind sensor, and a **wildfire smoke** check using your own air-quality sensor.
 - **Maps**: a marker for every active fire on Home Assistant's built-in Map card, plus optional Canada-wide maps of fire danger, smoke and hotspots.
 - Setup and settings are done entirely in the UI, with no YAML, API keys or extra packages.
 

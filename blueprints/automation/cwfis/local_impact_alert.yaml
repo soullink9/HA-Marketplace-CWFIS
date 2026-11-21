@@ -1,0 +1,163 @@
+blueprint:
+  name: CWFIS local impact alert
+  author: CWFIS integration
+  description: >
+    Notifies your phone when wildfire smoke or fire threatens a place you watch, using the CWFIS **Smoke impact**
+    and **Fire threat** sensors. It notifies only when a level gets worse (and, optionally, when it clears), and
+    each message carries the sensor's advice. You can also run your own actions, for example turning on an air
+    purifier or setting the HVAC to recirculate when smoke arrives.
+
+
+    This is a heads-up, not an official warning: always follow your local authorities.
+  domain: automation
+  homeassistant:
+    min_version: "2026.11.0"
+  source_url: https://github.com/soullink9/HA-Marketplace-CWFIS/blob/main/blueprints/automation/cwfis/local_impact_alert.yaml
+  input:
+    sensors:
+      name: Sensors
+      input:
+        smoke_sensor:
+          name: Smoke impact sensor
+          description: The CWFIS Smoke impact sensor for the place to watch, for example Smoke impact for Home.
+          selector:
+            entity:
+              filter:
+                - integration: cwfis
+                  domain: sensor
+        fire_sensor:
+          name: Fire threat sensor
+          description: The CWFIS Fire threat sensor for the same place.
+          selector:
+            entity:
+              filter:
+                - integration: cwfis
+                  domain: sensor
+    levels:
+      name: When to notify
+      input:
+        smoke_levels:
+          name: Smoke levels
+          description: >
+            Notify when Smoke impact gets worse and reaches one of these. The first six are the US AQI levels, the
+            last four Canada's AQHI levels; only the ones for the scale your sensor uses matter.
+          default:
+            - unhealthy_sensitive
+            - unhealthy
+            - very_unhealthy
+            - hazardous
+            - high_risk
+            - very_high_risk
+          selector:
+            select:
+              multiple: true
+              options:
+                - label: Moderate (US AQI)
+                  value: moderate
+                - label: Unhealthy for sensitive groups (US AQI)
+                  value: unhealthy_sensitive
+                - label: Unhealthy (US AQI)
+                  value: unhealthy
+                - label: Very unhealthy (US AQI)
+                  value: very_unhealthy
+                - label: Hazardous (US AQI)
+                  value: hazardous
+                - label: Moderate risk (AQHI)
+                  value: moderate_risk
+                - label: High risk (AQHI)
+                  value: high_risk
+                - label: Very high risk (AQHI)
+                  value: very_high_risk
+        fire_levels:
+          name: Fire threat levels
+          description: Notify when Fire threat gets worse and reaches one of these.
+          default:
+            - watch
+            - warning
+            - danger
+          selector:
+            select:
+              multiple: true
+              options:
+                - label: Watch
+                  value: watch
+                - label: Warning
+                  value: warning
+                - label: Danger
+                  value: danger
+        notify_all_clear:
+          name: Notify when it clears
+          description: Also notify when a level drops back to Good / Low risk (smoke) or None (fire).
+          default: false
+          selector:
+            boolean:
+    notify:
+      name: Notifications
+      input:
+        notify_device:
+          name: Phone to notify
+          description: A device with the Home Assistant Companion app.
+          selector:
+            device:
+              filter:
+                - integration: mobile_app
+    extra:
+      name: Extra actions (optional)
+      collapsed: true
+      input:
+        smoke_actions:
+          name: When smoke gets worse
+          description: For example, turn on an air purifier or set the HVAC fan to recirculate.
+          default: []
+          selector:
+            action:
+        fire_actions:
+          name: When fire threat gets worse
+          description: For example, flash the lights or announce it on a speaker.
+          default: []
+          selector:
+            action:
+
+mode: queued
+max: 10
+
+triggers:
+  - trigger: state
+    entity_id: !input smoke_sensor
+    id: smoke
+  - trigger: state
+    entity_id: !input fire_sensor
+    id: fire
+
+variables:
+  smoke_levels: !input smoke_levels
+  fire_levels: !input fire_levels
+  notify_all_clear: !input notify_all_clear
+  levels: "{{ smoke_levels if trigger.id == 'smoke' else fire_levels }}"
+  old: "{{ trigger.from_state.attributes.get('severity') if trigger.from_state else none }}"
+  new: "{{ trigger.to_state.attributes.get('severity') if trigger.to_state else none }}"
+  worse: "{{ old is number and new is number and new > old and trigger.to_state.state in levels }}"
+  cleared: "{{ notify_all_clear and old is number and new == 0 and old > 0 }}"
+  place: "{{ state_attr(trigger.entity_id, 'friendly_name') }}"
+  level: "{{ state_translated(trigger.entity_id) }}"
+
+conditions:
+  - condition: template
+    value_template: "{{ worse or cleared }}"
+
+actions:
+  - domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    title: "{{ place }}: {{ level }}"
+    message: >
+      {% if cleared %}All clear.{% elif trigger.id == 'fire' %}{{ trigger.to_state.attributes.reason }}.
+      {{ trigger.to_state.attributes.advice }}{% else %}{{ trigger.to_state.attributes.advice }}{% endif %}
+  - if:
+      - condition: template
+        value_template: "{{ worse and trigger.id == 'smoke' }}"
+    then: !input smoke_actions
+  - if:
+      - condition: template
+        value_template: "{{ worse and trigger.id == 'fire' }}"
+    then: !input fire_actions

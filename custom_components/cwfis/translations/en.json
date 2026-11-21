@@ -17,7 +17,10 @@
         "data": {
           "radius": "Alert radius",
           "zones": "Extra watch zones (optional)",
+          "danger_distance": "Fire threat: danger distance",
+          "warning_distance": "Fire threat: warning distance",
           "smoke_radius": "Smoke radius",
+          "air_quality_scale": "Air quality scale",
           "wind_entity": "Wind direction sensor (optional)",
           "pm25_entity": "PM2.5 sensor (optional)",
           "pm25_threshold": "PM2.5 smoke threshold",
@@ -28,7 +31,10 @@
         "data_description": {
           "radius": "Agency-reported fires within this distance of a zone count as nearby and raise Fire alert events. Hotspots, perimeters and prescribed burns are also counted within this distance.",
           "zones": "Home is always watched. Add zones (cottage, family, trip) to get the same sensors for each.",
+          "danger_distance": "Fire threat is Danger when a fire that isn't under control, or a fire perimeter, is this close to a zone.",
+          "warning_distance": "Fire threat is Warning when any active fire, perimeter or satellite hotspot is this close. Must be at least the danger distance.",
           "smoke_radius": "How far away a fire can be and still count as a smoke source for Fire upwind and Wildfire smoke.",
+          "air_quality_scale": "The scale Smoke impact uses. Automatic picks Canada's AQHI when Home Assistant's country is Canada, and the US AQI otherwise.",
           "wind_entity": "A sensor reporting the direction the wind is coming FROM, in degrees. Enables Fire upwind.",
           "pm25_entity": "An air-quality PM2.5 sensor (e.g. AirNow or PurpleAir). Enables Wildfire smoke.",
           "pm25_threshold": "PM2.5 at or above this counts as smoky. 35 µg/m³ is the US EPA 24-hour standard.",
@@ -37,6 +43,9 @@
           "map_images": "Canada-wide maps rendered by CWFIS, one image entity each. Works alongside the markers; show them with a Picture entity card."
         }
       }
+    },
+    "error": {
+      "warning_inside_danger": "The warning distance must be at least the danger distance."
     }
   },
   "entity": {
@@ -149,6 +158,54 @@
       },
       "danger_zone": {
         "name": "Fire danger ({zone})"
+      },
+      "smoke_impact": {
+        "name": "Smoke impact",
+        "state": {
+          "good": "Good",
+          "moderate": "Moderate",
+          "unhealthy_sensitive": "Unhealthy for sensitive groups",
+          "unhealthy": "Unhealthy",
+          "very_unhealthy": "Very unhealthy",
+          "hazardous": "Hazardous",
+          "low_risk": "Low risk",
+          "moderate_risk": "Moderate risk",
+          "high_risk": "High risk",
+          "very_high_risk": "Very high risk"
+        }
+      },
+      "fire_threat": {
+        "name": "Fire threat",
+        "state": {
+          "none": "None",
+          "watch": "Watch",
+          "warning": "Warning",
+          "danger": "Danger"
+        }
+      },
+      "smoke_impact_zone": {
+        "name": "Smoke impact ({zone})",
+        "state": {
+          "good": "Good",
+          "moderate": "Moderate",
+          "unhealthy_sensitive": "Unhealthy for sensitive groups",
+          "unhealthy": "Unhealthy",
+          "very_unhealthy": "Very unhealthy",
+          "hazardous": "Hazardous",
+          "low_risk": "Low risk",
+          "moderate_risk": "Moderate risk",
+          "high_risk": "High risk",
+          "very_high_risk": "Very high risk"
+        }
+      },
+      "fire_threat_zone": {
+        "name": "Fire threat ({zone})",
+        "state": {
+          "none": "None",
+          "watch": "Watch",
+          "warning": "Warning",
+          "danger": "Danger"
+        }
       }
     }
   },
@@ -166,6 +223,13 @@
         "fire_danger_tomorrow": "Fire danger forecast map (tomorrow)",
         "smoke": "Smoke map",
         "hotspots": "Hotspots map (24h)"
+      }
+    },
+    "air_quality_scale": {
+      "options": {
+        "auto": "Automatic (from Home Assistant's country)",
+        "us_aqi": "US Air Quality Index (EPA)",
+        "ca_aqhi": "Canada's Air Quality Health Index (AQHI)"
       }
     }
   }

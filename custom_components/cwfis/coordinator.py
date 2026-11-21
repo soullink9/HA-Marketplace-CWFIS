@@ -7,7 +7,7 @@ Data flow per update:
   1. Reported fires (required; if this fails the whole update fails and HA retries).
   2. Prescribed burns, hotspots, perimeters, fire danger, last year's numbers and the smoke
      forecast (all optional; if one fails only its own sensors show "unknown").
-  3. Distances/bearings from Home and every extra watch zone to each active fire.
+  3. Distances/bearings from Home and every extra watch zone to each active fire, and each zone's smoke forecast.
 """
 
 import asyncio
@@ -199,7 +199,8 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
         by_zone = dict(zip(zones, zone_results))
         home_fires = by_zone["home"]["all"]
 
-        last_year, smoke = await asyncio.gather(self._last_year(year), self._optional(self._smoke_forecast()))
+        last_year = await self._last_year(year)
+        smoke = by_zone["home"]["smoke"]
         last_year_total = last_year["total"] if last_year else None
         last_year_area = last_year["area"] if last_year else None
 
@@ -214,7 +215,8 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
         out = [fire for fire in season if fire.get("stage_of_control_status") == "EX"]  # "EX" is extinguished
 
         smoke_peak = smoke["max_24h"] if smoke else None
-        smoke_details = {key: value for key, value in smoke.items() if key != "max_24h"} if smoke else None
+        details = ("peak_time_24h", "max_48h", "peak_time_48h", "source")
+        smoke_details = {key: smoke[key] for key in details} if smoke else None
 
         # Keys ending in "_attrs" are picked up automatically as that sensor's attributes.
         return {
@@ -268,11 +270,12 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
     async def _zone_data(self, name: str, lat: float, lon: float, fires: list[dict], burns: list | None) -> dict:
         """Everything measured relative to one zone."""
         radius = self.radius
-        spots, perims, danger = await asyncio.gather(
+        spots, perims, danger, smoke = await asyncio.gather(
             self._optional(self._around(LAYER_HOTSPOTS, "lat,lon", lat, lon, radius)),
             self._optional(self._around(LAYER_PERIMETERS, "geometry", lat, lon, radius)),
             # A tiny box (0.5 km) is enough to find the danger polygon covering the zone itself.
             self._optional(self._around(LAYER_DANGER, "GRIDCODE", lat, lon, 0.5)),
+            self._optional(self._smoke_forecast(lat, lon)),
         )
 
         # Every trackable fire with distance/bearing from this zone, nearest first.
@@ -288,10 +291,13 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
         codes = _danger_codes(danger)
 
         # Counts are None (shown as "unknown") when their request failed, rather than a misleading 0.
-        hotspots = None
+        hotspots = hotspot_distance = None
         if spots is not None:
             located = [spot["properties"] for spot in spots if _has_lat_lon(spot.get("properties"))]
-            hotspots = len([spot for spot in located if km(lat, lon, spot["lat"], spot["lon"]) <= radius])
+            spot_distances = [km(lat, lon, spot["lat"], spot["lon"]) for spot in located]
+            in_radius = [d for d in spot_distances if d <= radius]
+            hotspots = len(in_radius)
+            hotspot_distance = round(min(in_radius), 1) if in_radius else None
         prescribed = None
         if burns is not None:
             prescribed = len([burn for burn in burns if km(lat, lon, burn["latitude"], burn["longitude"]) <= radius])
@@ -305,6 +311,8 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
             "perimeter": round(min(edges), 1) if edges else None,
             "danger": DANGER_LEVELS[max(codes)] if codes else None,
             "prescribed": prescribed,
+            "hotspot_distance": hotspot_distance,
+            "smoke": smoke,
         }
 
     # ------------------------------------------------------------------
@@ -333,11 +341,11 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
             cache.update(date=today, value={"total": len(prev), "area": round(sum(fire_size(f) for f in prev))})
         return cache["value"]
 
-    async def _smoke_forecast(self) -> dict | None:
-        """Highest forecast PM2.5 at Home over the next 24 h and 48 h (Open-Meteo / ECMWF CAMS)."""
+    async def _smoke_forecast(self, lat: float, lon: float) -> dict | None:
+        """Forecast PM2.5 at a zone now, and its highest over the next 24 h and 48 h (Open-Meteo / ECMWF CAMS)."""
         params = {
-            "latitude": self.hass.config.latitude,
-            "longitude": self.hass.config.longitude,
+            "latitude": lat,
+            "longitude": lon,
             "hourly": "pm2_5",
             "forecast_days": 3,
             "timezone": "UTC",
@@ -361,7 +369,10 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
         (t24, v24), (t48, v48) = peak(24), peak(48)
         if v24 is None:  # no usable forecast values
             return None
+        # The current hour's value: the latest one that isn't in the future.
+        current = [p for p in series if now - timedelta(hours=1) <= p[0] <= now]
         return {
+            "now": round(current[-1][1], 1) if current else None,
             "max_24h": round(v24, 1),
             "peak_time_24h": dt_util.as_local(t24).isoformat(),
             "max_48h": round(v48, 1),

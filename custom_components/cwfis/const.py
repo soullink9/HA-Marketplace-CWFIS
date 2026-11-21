@@ -49,11 +49,17 @@ CONF_PM25_THRESHOLD = "pm25_threshold"
 CONF_PROVINCES = "provinces"
 CONF_MAP_FIRES = "map_fires"
 CONF_MAP_IMAGES = "map_images"
+CONF_AQ_SCALE = "air_quality_scale"
+CONF_DANGER_DISTANCE = "danger_distance"
+CONF_WARNING_DISTANCE = "warning_distance"
 
 DEFAULT_RADIUS = 250  # km
 DEFAULT_SMOKE_RADIUS = 1000  # km
 DEFAULT_PM25 = 35  # µg/m³ (US EPA 24-hour standard)
 DEFAULT_MAP_FIRES = "all"
+DEFAULT_AQ_SCALE = "auto"
+DEFAULT_DANGER_DISTANCE = 25  # km
+DEFAULT_WARNING_DISTANCE = 50  # km
 
 # ---------------------------------------------------------------------------
 # Tuning
@@ -102,3 +108,91 @@ MAPS = {
 
 # Which fires get a map marker (Configure -> Fires on map); labels in translations/en.json under selector.map_fires.
 MAP_FIRES_MODES = ["all", "nearby", "none"]
+
+# ---------------------------------------------------------------------------
+# Local impact (Smoke impact and Fire threat sensors)
+# ---------------------------------------------------------------------------
+# Air quality scales for Smoke impact (Configure -> Air quality scale); labels in translations/en.json under
+# selector.air_quality_scale. "auto" picks Canada's AQHI when Home Assistant's country is Canada, else the US AQI.
+AQ_SCALES = ["auto", "us_aqi", "ca_aqhi"]
+
+# US EPA AQI for PM2.5 (2024 breakpoints): (level, highest PM2.5 in µg/m³, AQI low, AQI high, advice).
+# The PM2.5 ranges are the ones between breakpoints; the last level is open-ended.
+US_AQI = [
+    ("good", 9.0, 0, 50, "Air quality is good. No action needed."),
+    (
+        "moderate",
+        35.4,
+        51,
+        100,
+        "Unusually sensitive people should consider less prolonged or heavy exertion outdoors.",
+    ),
+    (
+        "unhealthy_sensitive",
+        55.4,
+        101,
+        150,
+        "People with heart or lung disease, older adults, children and pregnant people should cut back on time and "
+        "heavy exertion outdoors. Consider closing windows and running an air purifier.",
+    ),
+    (
+        "unhealthy",
+        125.4,
+        151,
+        200,
+        "Everyone should cut back on outdoor exertion, and sensitive groups should avoid it. Keep windows closed and "
+        "run an air purifier or set the HVAC to recirculate.",
+    ),
+    (
+        "very_unhealthy",
+        225.4,
+        201,
+        300,
+        "Everyone should avoid prolonged outdoor exertion, and sensitive groups should stay indoors. Keep windows "
+        "closed, filter indoor air, and wear an N95 respirator outside.",
+    ),
+    (
+        "hazardous",
+        325.4,
+        301,
+        500,
+        "Everyone should stay indoors with windows closed and filtered air. Wear an N95 respirator if you must go out.",
+    ),
+]
+
+# Canada's AQHI-Plus (the PM2.5-only AQHI used for wildfire smoke): one point per 10 µg/m³ of 1-hour PM2.5,
+# shown as "10+" above 100. Levels: (level, highest AQHI in it, advice).
+CA_AQHI = [
+    ("low_risk", 3, "Ideal air quality for outdoor activities."),
+    (
+        "moderate_risk",
+        6,
+        "At-risk people should consider reducing or rescheduling strenuous outdoor activities if they have symptoms. "
+        "Others needn't change their plans unless they have symptoms.",
+    ),
+    (
+        "high_risk",
+        10,
+        "At-risk people should reduce or reschedule strenuous outdoor activities, and children and older adults "
+        "should take it easy. Everyone should cut back if they have symptoms. Keep windows closed and filter indoor "
+        "air.",
+    ),
+    (
+        "very_high_risk",
+        None,
+        "At-risk people, children and older adults should avoid strenuous activity outdoors, and everyone should "
+        "reduce or reschedule it, especially with symptoms such as coughing or throat irritation. Stay indoors with "
+        "filtered air.",
+    ),
+]
+
+# Fire threat levels, lowest first, with the advice shown for each.
+FIRE_THREAT = {
+    "none": "No reported fire is close enough to matter here.",
+    "watch": "There's fire activity in the region. Stay informed and review your evacuation plan.",
+    "warning": "A fire is close. Be ready to leave: pack essentials, keep your vehicle fuelled and follow local "
+    "authorities.",
+    "danger": "A fire is very close. Follow local authorities' instructions and be ready to leave immediately.",
+}
+# Fire danger ratings that raise Fire threat to "watch" on their own.
+WATCH_DANGER_LEVELS = {"Very high", "Extreme"}

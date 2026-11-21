@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.0 (2026-11-21)
+
+- **What it means for you.** Two new sensors for Home and every watch zone turn the fire and smoke data into a
+  level you can act on, each with plain-language advice:
+  - **Smoke impact**: how smoky the air is now or will be over the next 24 hours, on the US Air Quality Index or
+    Canada's AQHI. It uses your own PM2.5 sensor for Home when you have one.
+  - **Fire threat**: None, Watch, Warning or Danger, from how close fires, perimeters and hotspots are, whether a
+    fire is under control, and the local fire danger.
+- New settings: **Air quality scale** (automatic from Home Assistant's country, US AQI or Canada's AQHI) and the
+  **danger** and **warning distances** for Fire threat.
+- The smoke forecast now covers every watch zone, not just Home.
+- A **Local impact** dashboard card and a **CWFIS local impact alert** blueprint that notifies your phone when smoke
+  or fire threat gets worse, and can run your own actions such as turning on an air purifier. See
+  [Dashboards and Automations](docs/Dashboards-and-Automations.md#local-impact).
+
 ## 1.3.0 (2026-11-15)
 
 - **Needs Home Assistant 2026.11 or newer.** CWFIS now follows the latest Home Assistant release only, and the

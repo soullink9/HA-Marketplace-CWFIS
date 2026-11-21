@@ -177,7 +177,7 @@ async def _forward_setups(entry, platforms):
 
 
 hass = types.SimpleNamespace(
-    config=types.SimpleNamespace(latitude=HOME[0], longitude=HOME[1]),
+    config=types.SimpleNamespace(latitude=HOME[0], longitude=HOME[1], country="US"),
     states=FakeStates(),
     async_create_task=lambda coro: coro.close(),
     config_entries=types.SimpleNamespace(async_forward_entry_setups=_forward_setups),
@@ -213,7 +213,17 @@ EXPECTED_UNIQUE_IDS = sorted(
     + [
         f"E_{z}{k}"
         for z in ("", "zone.cottage_")
-        for k in ("nearest", "nearby", "perimeter", "hotspots", "prescribed", "danger", "fire_nearby")
+        for k in (
+            "nearest",
+            "nearby",
+            "perimeter",
+            "hotspots",
+            "prescribed",
+            "danger",
+            "fire_nearby",
+            "smoke_impact",
+            "fire_threat",
+        )
     ]
     + ["E_fire_upwind", "E_wildfire_smoke", "E_fire_alert", "E_map_fire_danger", "E_map_fire_danger_tomorrow"]
 )
@@ -226,6 +236,7 @@ EXPECTED_NAMES = {
     "area_vs_last_year": "Area burned vs last year",
     "danger": "Fire danger",
     "fire_alert": "Fire alert",
+    "fire_threat": "Fire threat",
     "fire_nearby": "Fire within alert radius",
     "fire_upwind": "Fire upwind",
     "fires_vs_last_year": "Fires vs last year",
@@ -242,11 +253,14 @@ EXPECTED_NAMES = {
     "qc_active": "Active fires (Quebec)",
     "qc_area": "Area burned (Quebec)",
     "reported_today": "Reported today",
+    "smoke_impact": "Smoke impact",
     "smoke_forecast": "Smoke forecast PM2.5 (24h max)",
     "total": "Total fires",
     "wildfire_smoke": "Wildfire smoke",
     "zone.cottage_danger": "Fire danger (Cottage)",
     "zone.cottage_fire_nearby": "Fire within alert radius (Cottage)",
+    "zone.cottage_fire_threat": "Fire threat (Cottage)",
+    "zone.cottage_smoke_impact": "Smoke impact (Cottage)",
     "zone.cottage_hotspots": "Hotspots nearby (24h) (Cottage)",
     "zone.cottage_nearby": "Active fires nearby (Cottage)",
     "zone.cottage_nearest": "Nearest active fire (Cottage)",
@@ -281,10 +295,57 @@ def naming_problems(entities):
 def selector_problems():
     """Every choice in the Configure form's lists has a label in translations/en.json."""
     problems = []
-    for selector, options in (("map_fires", const.MAP_FIRES_MODES), ("map_images", list(const.MAPS))):
+    for selector, options in (
+        ("map_fires", const.MAP_FIRES_MODES),
+        ("map_images", list(const.MAPS)),
+        ("air_quality_scale", const.AQ_SCALES),
+    ):
         labels = TRANSLATIONS["selector"][selector]["options"]
         if sorted(labels) != sorted(options):
             problems.append(f"selector.{selector} labels {sorted(labels)} != options {sorted(options)}")
+    return problems
+
+
+def level_problems():
+    """The US AQI and AQHI lookups give the published levels at and either side of each breakpoint."""
+    from cwfis.helpers import air_quality  # noqa: PLC0415
+
+    cases = [
+        (0, "us_aqi", "good", 0),
+        (9.0, "us_aqi", "good", 50),
+        (9.1, "us_aqi", "moderate", 51),
+        (35.4, "us_aqi", "moderate", 100),
+        (35.49, "us_aqi", "moderate", 100),
+        (35.5, "us_aqi", "unhealthy_sensitive", 101),
+        (55.5, "us_aqi", "unhealthy", 151),
+        (125.5, "us_aqi", "very_unhealthy", 201),
+        (225.5, "us_aqi", "hazardous", 301),
+        (900, "us_aqi", "hazardous", 500),
+        (0, "ca_aqhi", "low_risk", 1),
+        (30, "ca_aqhi", "low_risk", 3),
+        (30.1, "ca_aqhi", "moderate_risk", 4),
+        (60.1, "ca_aqhi", "high_risk", 7),
+        (100, "ca_aqhi", "high_risk", 10),
+        (100.1, "ca_aqhi", "very_high_risk", "10+"),
+    ]
+    problems = []
+    for pm25, scale, level, index in cases:
+        got = air_quality(pm25, scale)
+        if (got["level"], got["index"]) != (level, index):
+            problems.append(f"{pm25} µg/m³ on {scale} = {got['level']} {got['index']}, expected {level} {index}")
+    return problems
+
+
+def blueprint_problems():
+    """The notification blueprint only uses inputs it declares, and offers only levels the sensors can have."""
+    path = Path(__file__).resolve().parents[1] / "blueprints" / "automation" / "cwfis" / "local_impact_alert.yaml"
+    text = path.read_text(encoding="utf-8")
+    declared = set(re.findall(r"^ {8}(\w+):\n {10}name:", text, re.MULTILINE))
+    used = set(re.findall(r"!input (\w+)", text))
+    problems = [f"blueprint uses undeclared input {name}" for name in sorted(used - declared)]
+    problems += [f"blueprint declares unused input {name}" for name in sorted(declared - used)]
+    states = {level[0] for level in const.US_AQI + const.CA_AQHI} | set(const.FIRE_THREAT)
+    problems += [f"blueprint offers unknown level {v}" for v in re.findall(r"value: (\w+)", text) if v not in states]
     return problems
 
 
@@ -312,17 +373,21 @@ async def read_everything(entities):
     return states
 
 
-async def scenario(name, start, data, then=None, expect_events=None, expect=None, expect_failure=False):
+async def scenario(
+    name, start, data, then=None, expect_events=None, expect=None, expect_failure=False, options=None, attrs=None
+):
     """Set up at time `start` with server data `data`; optionally move to (time, data) `then` and refresh.
 
     expect: {key: value} checked against entity states (by unique id) or the coordinator's data.
+    attrs: {(unique id, attribute): value} checked against entity attributes.
+    options: settings to change from OPTIONS for this scenario.
     Returns True when the scenario passes.
     """
     SCENARIO.clear()
     SCENARIO.update(data)
     EVENTS.clear()
     CLOCK["now"] = start
-    entry = types.SimpleNamespace(entry_id="E", options=OPTIONS, async_on_unload=lambda f: None)
+    entry = types.SimpleNamespace(entry_id="E", options={**OPTIONS, **(options or {})}, async_on_unload=lambda f: None)
     try:
         await cwfis.async_setup_entry(hass, entry)
         entities = []
@@ -348,6 +413,11 @@ async def scenario(name, start, data, then=None, expect_events=None, expect=None
             got = states.get(f"E_{key}", entry.runtime_data.data.get(key))
             if got != want:
                 problems.append(f"{key} = {got!r}, expected {want!r}")
+        by_id = {getattr(e, "_attr_unique_id", None): e for e in entities}
+        for (key, attr), want in (attrs or {}).items():
+            got = (by_id[f"E_{key}"].extra_state_attributes or {}).get(attr)
+            if got != want:
+                problems.append(f"{key}.{attr} = {got!r}, expected {want!r}")
         print(("PASS  " if not problems else "FAIL  ") + name + "".join(f"\n      - {p}" for p in problems))
         return not problems
     except UpdateFailed as err:
@@ -520,6 +590,61 @@ async def main() -> bool:
             + [("fire_out", "2026_QC_2")] * 2,
         )
     )
+
+    # Local impact: Home is ~555 km from the fire (inside the 600 km alert radius), the Cottage sits right on it.
+    smoky = forecast(day - timedelta(hours=2), [8.0] * 2 + [12.0] + [60.0] * 30 + [8.0] * 39)
+    impact_data = {"fires": [fire("2026_QC_1")], "last_year": [], "meteo": smoky}
+    results.append(
+        await scenario(
+            "Local impact: smoke on its way (US AQI), fire at the Cottage",
+            day,
+            impact_data,
+            expect={
+                "smoke_impact": "unhealthy",
+                "zone.cottage_smoke_impact": "unhealthy",
+                "fire_threat": "watch",
+                "zone.cottage_fire_threat": "danger",
+            },
+            attrs={
+                ("smoke_impact", "level_now"): "moderate",
+                ("smoke_impact", "pm25_now"): 12.0,
+                ("smoke_impact", "pm25_now_source"): "forecast",
+                ("smoke_impact", "index"): 154,
+                ("smoke_impact", "severity"): 3,
+                ("fire_threat", "severity"): 1,
+                ("zone.cottage_fire_threat", "severity"): 3,
+            },
+        )
+    )
+    results.append(
+        await scenario(
+            "Local impact: Canada's AQHI, and a controlled fire is only a warning",
+            day,
+            {**impact_data, "fires": [fire("2026_QC_1", "UC")]},
+            options={"air_quality_scale": "ca_aqhi"},
+            expect={"smoke_impact": "moderate_risk", "zone.cottage_fire_threat": "warning"},
+            attrs={("smoke_impact", "index"): 6, ("smoke_impact", "level_now"): "low_risk"},
+        )
+    )
+    hotspot = near(0.2, 0)  # ~22 km north of Home
+    results.append(
+        await scenario(
+            "Local impact: a hotspot inside the warning distance, nothing reported, automatic scale",
+            day,
+            {"fires": [], "last_year": [], "hotspots": [{"lat": hotspot[0], "lon": hotspot[1]}], "danger": [4]},
+            options={"air_quality_scale": "auto", "danger_distance": 10, "warning_distance": 40},
+            expect={"fire_threat": "warning", "smoke_impact": None, "zone.cottage_fire_threat": "watch"},
+            attrs={("smoke_impact", "scale"): "us_aqi", ("fire_threat", "nearest_hotspot_km"): 22.2},
+        )
+    )
+
+    problems = level_problems() + blueprint_problems()
+    print(
+        ("PASS  " if not problems else "FAIL  ")
+        + "Air quality levels and blueprint"
+        + "".join(f"\n      - {p}" for p in problems)
+    )
+    results.append(not problems)
 
     problems = selector_problems()
     print(

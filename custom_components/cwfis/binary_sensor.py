@@ -1,9 +1,8 @@
 """Binary sensors: fire within alert radius, fire upwind, wildfire smoke."""
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     CONF_PM25,
@@ -16,7 +15,7 @@ from .const import (
     UPWIND_SPREAD,
 )
 from .coordinator import CwfisConfigEntry
-from .entity import CwfisEntity
+from .entity import CwfisEntity, WatchingEntity
 from .helpers import fire_info, state_as_float
 
 # Every entity reads the coordinator's data, so Home Assistant needn't limit how many update at once.
@@ -76,26 +75,7 @@ class FireNearby(CwfisEntity, BinarySensorEntity):
         }
 
 
-class WatchingEntity(CwfisEntity, BinarySensorEntity):
-    """Base for binary sensors that also depend on other HA sensors (wind, PM2.5).
-
-    They re-evaluate whenever a watched sensor changes, not only every 30 minutes.
-    """
-
-    _watch: list[str]
-
-    async def async_added_to_hass(self):
-        """Start listening to the watched sensors once the entity exists."""
-        await super().async_added_to_hass()
-        self.async_on_remove(async_track_state_change_event(self.hass, self._watch, self._watched_changed))
-
-    @callback
-    def _watched_changed(self, _event):
-        """Re-evaluate as soon as a watched sensor changes, instead of waiting for the next 30-minute update."""
-        self.async_write_ha_state()
-
-
-class FireUpwind(WatchingEntity):
+class FireUpwind(WatchingEntity, BinarySensorEntity):
     """On when a fire within the smoke radius is upwind of Home (smoke likely drifting your way)."""
 
     _attr_device_class = BinarySensorDeviceClass.SMOKE
@@ -119,7 +99,7 @@ class FireUpwind(WatchingEntity):
         return {"fires": [fire_info(f) for f in fires[:MAX_LISTED_FIRES]]}
 
 
-class WildfireSmoke(WatchingEntity):
+class WildfireSmoke(WatchingEntity, BinarySensorEntity):
     """On when measured PM2.5 is high AND a likely fire source exists.
 
     The source is an upwind fire if a wind sensor is configured, otherwise any fire in the smoke radius.

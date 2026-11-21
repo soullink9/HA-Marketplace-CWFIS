@@ -38,6 +38,52 @@ entities:
   - sensor.cwfis_smoke_forecast_pm2_5_24h_max
 ```
 
+## Local impact
+
+One card that answers "what does this mean for me?". It shows the smoke and fire levels, and the advice only for the ones that need attention:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: tile
+    entity: sensor.cwfis_smoke_impact
+    name: Smoke
+  - type: tile
+    entity: sensor.cwfis_fire_threat
+    name: Fire threat
+  - type: markdown
+    content: >-
+      {% set smoke = 'sensor.cwfis_smoke_impact' %}
+      {% set fire = 'sensor.cwfis_fire_threat' %}
+      {% if state_attr(fire, 'severity') | int(0) > 0 %}
+      **🔥 {{ state_translated(fire) }}:** {{ state_attr(fire, 'reason') }}.
+      {{ state_attr(fire, 'advice') }}
+      {% endif %}
+      {% if state_attr(smoke, 'severity') | int(0) > 0 %}
+      **🌫️ {{ state_translated(smoke) }}**
+      {%- if state_attr(smoke, 'level_now') != states(smoke) %}
+      expected by {{ as_timestamp(state_attr(smoke, 'peak_time_24h')) | timestamp_custom('%a %H:%M') }}
+      {%- endif %}
+      ({{ state_attr(smoke, 'pm25_max_24h') }} µg/m³ forecast peak).
+      {{ state_attr(smoke, 'advice') }}
+      {% endif %}
+      {% if state_attr(fire, 'severity') | int(0) == 0 and state_attr(smoke, 'severity') | int(0) == 0 %}
+      ✅ No wildfire smoke or fire threat expected in the next 24 hours.
+      {% endif %}
+```
+
+For an extra zone, use its sensors instead, for example `sensor.cwfis_smoke_impact_cottage`.
+
+## Local impact alerts
+
+The **CWFIS local impact alert** blueprint notifies your phone when **Smoke impact** or **Fire threat** gets worse, with the advice in the message. You choose which levels matter, whether to hear when it clears, and extra actions to run, such as turning on an air purifier when smoke arrives.
+
+[![Open your Home Assistant instance and import the CWFIS local impact alert blueprint.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fsoullink9%2FHA-Marketplace-CWFIS%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fcwfis%2Flocal_impact_alert.yaml)
+
+Or go to **Settings → Automations & scenes → Blueprints → Import blueprint** and paste
+`https://github.com/soullink9/HA-Marketplace-CWFIS/blob/main/blueprints/automation/cwfis/local_impact_alert.yaml`.
+Then create an automation from it, once for each place you want to hear about.
+
 ## Map images and alert history
 
 - **Map image:** add a **Picture entity** card and pick, for example, `image.cwfis_fire_danger_map`. Putting it in a grid next to the markers map works well.

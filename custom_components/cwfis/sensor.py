@@ -1,14 +1,27 @@
-"""Sensors: national summary, season comparison, smoke forecast, provinces and per-zone proximity."""
+"""Sensors: national summary, season comparison, smoke forecast, provinces, per-zone proximity and local impact."""
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import PERCENTAGE, UnitOfDensity, UnitOfLength
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import CONF_PROVINCES, MAX_LISTED_FIRES
+from .const import (
+    CA_AQHI,
+    CONF_AQ_SCALE,
+    CONF_DANGER_DISTANCE,
+    CONF_PM25,
+    CONF_PROVINCES,
+    CONF_WARNING_DISTANCE,
+    DEFAULT_AQ_SCALE,
+    DEFAULT_DANGER_DISTANCE,
+    DEFAULT_WARNING_DISTANCE,
+    FIRE_THREAT,
+    MAX_LISTED_FIRES,
+    US_AQI,
+)
 from .coordinator import CwfisConfigEntry
-from .entity import CwfisEntity
-from .helpers import fire_info
+from .entity import CwfisEntity, WatchingEntity
+from .helpers import air_quality, fire_info, fire_threat, state_as_float
 
 # Every entity reads the coordinator's data, so Home Assistant needn't limit how many update at once.
 PARALLEL_UPDATES = 0
@@ -48,12 +61,16 @@ PER_ZONE = {
 async def async_setup_entry(
     hass: HomeAssistant, entry: CwfisConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
-    """Create national, province and per-zone sensors."""
-    entities: list[CwfisSensor] = [NationalSensor(entry, key) for key in NATIONAL]
+    """Create national, province and per-zone sensors, and each zone's Smoke impact and Fire threat."""
+    entities: list[SensorEntity] = [NationalSensor(entry, key) for key in NATIONAL]
     for code in entry.options.get(CONF_PROVINCES, []):
         entities += [ProvinceSensor(entry, key, code) for key in PROVINCE]
+    scale = entry.options.get(CONF_AQ_SCALE, DEFAULT_AQ_SCALE)
+    if scale == "auto":  # Canada's AQHI for a Home in Canada, the US AQI anywhere else
+        scale = "ca_aqhi" if hass.config.country == "CA" else "us_aqi"
     for zone in entry.runtime_data.data["zones"]:
         entities += [ZoneSensor(entry, key, zone) for key in PER_ZONE]
+        entities += [SmokeImpact(entry, zone, scale), FireThreat(entry, zone)]
     async_add_entities(entities)
 
 
@@ -131,3 +148,98 @@ class ZoneSensor(CwfisSensor):
         if self._key == "nearby":
             return {"fires": [fire_info(f) for f in self.zone_data["nearby"][:MAX_LISTED_FIRES]]}
         return None
+
+
+class SmokeImpact(WatchingEntity, SensorEntity):
+    """How smoky the air is or will be at a zone, as a US AQI or Canadian AQHI level with advice.
+
+    The state is the worse of "now" and the forecast peak over the next 24 hours, so it gives warning before smoke
+    arrives. "Now" is your own PM2.5 sensor for Home when one is set, otherwise the forecast for the current hour.
+    """
+
+    _attr_device_class = SensorDeviceClass.ENUM
+
+    def __init__(self, entry, zone, scale):
+        """Use the given scale's levels; watch the PM2.5 sensor for Home so the level follows it straight away."""
+        super().__init__(entry, "smoke_impact", zone)
+        self._scale = scale
+        self._attr_options = [level[0] for level in (CA_AQHI if scale == "ca_aqhi" else US_AQI)]
+        self._pm25 = entry.options.get(CONF_PM25) if zone == "home" else None
+        self._watch = [self._pm25] if self._pm25 else []
+
+    def _assess(self) -> dict | None:
+        """The level details for now and the next 24 hours, or None when there's nothing to go on."""
+        forecast = self.zone_data["smoke"] or {}
+        measured = state_as_float(self.hass, self._pm25) if self._pm25 else None
+        now = measured if measured is not None else forecast.get("now")
+        readings = [pm for pm in (now, forecast.get("max_24h")) if pm is not None]
+        if not readings:
+            return None
+        worst = air_quality(max(readings), self._scale)
+        return {
+            **worst,
+            "now": air_quality(now, self._scale) if now is not None else None,
+            "pm25_now": now,
+            "pm25_now_source": "sensor" if measured is not None else "forecast",
+            "pm25_max_24h": forecast.get("max_24h"),
+            "peak_time_24h": forecast.get("peak_time_24h"),
+        }
+
+    @property
+    def native_value(self):
+        """The worse level of now and the next 24 hours."""
+        assessment = self._assess()
+        return assessment and assessment["level"]
+
+    @property
+    def extra_state_attributes(self):
+        """The index, what to do, and the PM2.5 readings behind it."""
+        a = self._assess()
+        if a is None:
+            return {"scale": self._scale}
+        return {
+            "scale": self._scale,
+            "index": a["index"],
+            "severity": a["severity"],
+            "advice": a["advice"],
+            "level_now": a["now"] and a["now"]["level"],
+            "pm25_now": a["pm25_now"],
+            "pm25_now_source": a["pm25_now_source"],
+            "pm25_max_24h": a["pm25_max_24h"],
+            "peak_time_24h": a["peak_time_24h"],
+        }
+
+
+class FireThreat(CwfisEntity, SensorEntity):
+    """How directly fire threatens a zone: none, watch, warning or danger, with the reason and advice."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = list(FIRE_THREAT)
+
+    def __init__(self, entry, zone):
+        """Read the danger and warning distances from the options."""
+        super().__init__(entry, "fire_threat", zone)
+        self._danger_km = entry.options.get(CONF_DANGER_DISTANCE, DEFAULT_DANGER_DISTANCE)
+        self._warning_km = entry.options.get(CONF_WARNING_DISTANCE, DEFAULT_WARNING_DISTANCE)
+
+    @property
+    def native_value(self):
+        """The threat level."""
+        return fire_threat(self.zone_data, self._danger_km, self._warning_km)[0]
+
+    @property
+    def extra_state_attributes(self):
+        """Why, what to do, and the nearest fire."""
+        level, reason = fire_threat(self.zone_data, self._danger_km, self._warning_km)
+        nearest = self.zone_data["nearest"]
+        return {
+            "severity": list(FIRE_THREAT).index(level),
+            "reason": reason,
+            "advice": FIRE_THREAT[level],
+            "danger_distance_km": self._danger_km,
+            "warning_distance_km": self._warning_km,
+            "nearest_fire": fire_info(nearest) if nearest else None,
+            "nearest_perimeter_km": self.zone_data["perimeter"],
+            "nearest_hotspot_km": self.zone_data["hotspot_distance"],
+            "fire_danger": self.zone_data["danger"],
+        }

@@ -128,7 +128,7 @@ stub("homeassistant.util.location", distance=haversine_m)
 stub(
     "homeassistant.components.sensor",
     SensorEntity=object,
-    SensorDeviceClass=types.SimpleNamespace(DISTANCE="distance", PM25="pm25"),
+    SensorDeviceClass=types.SimpleNamespace(DISTANCE="distance", PM25="pm25", ENUM="enum"),
     SensorStateClass=types.SimpleNamespace(MEASUREMENT="measurement"),
 )
 stub(

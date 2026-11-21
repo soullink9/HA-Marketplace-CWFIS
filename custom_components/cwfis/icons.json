@@ -99,6 +99,38 @@
       },
       "danger_zone": {
         "default": "mdi:gauge"
+      },
+      "smoke_impact": {
+        "default": "mdi:weather-hazy",
+        "state": {
+          "good": "mdi:leaf",
+          "low_risk": "mdi:leaf",
+          "hazardous": "mdi:biohazard",
+          "very_high_risk": "mdi:biohazard"
+        }
+      },
+      "fire_threat": {
+        "default": "mdi:fire-alert",
+        "state": {
+          "none": "mdi:shield-check",
+          "danger": "mdi:fire-alert"
+        }
+      },
+      "smoke_impact_zone": {
+        "default": "mdi:weather-hazy",
+        "state": {
+          "good": "mdi:leaf",
+          "low_risk": "mdi:leaf",
+          "hazardous": "mdi:biohazard",
+          "very_high_risk": "mdi:biohazard"
+        }
+      },
+      "fire_threat_zone": {
+        "default": "mdi:fire-alert",
+        "state": {
+          "none": "mdi:shield-check",
+          "danger": "mdi:fire-alert"
+        }
       }
     }
   }

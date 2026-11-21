@@ -1,10 +1,10 @@
 """Small pure helper functions (no Home Assistant state, easy to test on their own)."""
 
-from math import atan2, cos, degrees, radians, sin
+from math import atan2, ceil, cos, degrees, floor, radians, sin
 
 from homeassistant.util.location import distance
 
-from .const import STAGES
+from .const import CA_AQHI, STAGES, US_AQI, WATCH_DANGER_LEVELS
 
 
 def km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -96,3 +96,65 @@ def fire_info(fire: dict) -> dict:
         "direction": compass(fire["bearing"]),
         "status_date": fire.get("status_date"),
     }
+
+
+def air_quality(pm25: float, scale: str) -> dict:
+    """Air quality level for a PM2.5 value (µg/m³) on the US AQI ("us_aqi") or Canada's AQHI-Plus ("ca_aqhi").
+
+    Returns the level key, the index number, its severity (the level's position, 0 = best) and the advice.
+    """
+    if scale == "ca_aqhi":
+        index = max(1, ceil(pm25 / 10))
+        for severity, (level, highest, advice) in enumerate(CA_AQHI):
+            if highest is None or index <= highest:
+                return {
+                    "level": level,
+                    "index": index if index <= 10 else "10+",
+                    "severity": severity,
+                    "advice": advice,
+                }
+
+    pm25 = floor(max(pm25, 0) * 10) / 10  # the EPA truncates PM2.5 to one decimal before looking it up
+    low = 0.0
+    for severity, (level, high, aqi_low, aqi_high, advice) in enumerate(US_AQI):
+        if pm25 <= high or severity == len(US_AQI) - 1:
+            index = round(aqi_low + (aqi_high - aqi_low) * (min(pm25, high) - low) / (high - low))
+            return {"level": level, "index": index, "severity": severity, "advice": advice}
+        low = high + 0.1
+    raise AssertionError("unreachable")  # the last level catches everything
+
+
+def fire_threat(zone: dict, danger_km: float, warning_km: float) -> tuple[str, str]:
+    """Fire threat level for one zone's data, and the reason for it.
+
+    danger:  a fire that isn't under control, or a fire perimeter, within danger_km.
+    warning: any active fire, perimeter or satellite hotspot within warning_km (or a controlled fire in danger_km).
+    watch:   an active fire or hotspot inside the alert radius, or a Very high / Extreme fire danger rating.
+    """
+    nearest, perimeter, hotspot = zone["nearest"], zone["perimeter"], zone.get("hotspot_distance")
+    uncontrolled = next((f for f in zone["nearby"] if f.get("stage_of_control_status") != "UC"), None)
+
+    def fire_text(fire):
+        stage = fire.get("stage_of_control_status")
+        return (
+            f"{STAGES.get(stage, stage or 'Active').lower().capitalize()} fire {fire['national_fire_id']} "
+            f"{fire['distance']} km {compass(fire['bearing'])}"
+        )
+
+    if uncontrolled and uncontrolled["distance"] <= danger_km:
+        return "danger", fire_text(uncontrolled)
+    if perimeter is not None and perimeter <= danger_km:
+        return "danger", f"Fire perimeter {perimeter} km away"
+    if nearest and nearest["distance"] <= warning_km:
+        return "warning", fire_text(nearest)
+    if perimeter is not None and perimeter <= warning_km:
+        return "warning", f"Fire perimeter {perimeter} km away"
+    if hotspot is not None and hotspot <= warning_km:
+        return "warning", f"Satellite hotspot {hotspot} km away (possibly an unreported fire)"
+    if zone["nearby"]:
+        return "watch", f"{len(zone['nearby'])} active fire(s) in the alert radius, nearest {fire_text(nearest)}"
+    if zone["hotspots"]:
+        return "watch", f"{zone['hotspots']} satellite hotspot(s) in the alert radius"
+    if zone["danger"] in WATCH_DANGER_LEVELS:
+        return "watch", f"Fire danger is {zone['danger']}"
+    return "none", "No active fires or hotspots in the alert radius"

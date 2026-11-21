@@ -36,6 +36,26 @@ All data refreshes every **30 minutes**, while CWFIS itself updates hourly. Map 
 - **Fire out** fires when a nearby fire leaves the active list. Leaving the radius list because a zone was removed doesn't count.
 - After a restart, fires already nearby are not announced again.
 
+## Local impact
+
+**Fire threat** takes the first rule that matches:
+
+| Level | When |
+|---|---|
+| Danger | A fire that isn't under control (out of control, being held or unknown stage) is within the **danger distance**, or a fire perimeter is. |
+| Warning | Any active fire, fire perimeter or satellite hotspot is within the **warning distance**. A fire that's under control inside the danger distance is a Warning too. |
+| Watch | An active fire or a satellite hotspot is inside the **alert radius**, or the local fire danger is Very high or Extreme. |
+| None | None of the above. |
+
+Hotspots never raise **Danger** on their own, because some are industrial heat sources such as gas flares rather than fires.
+
+**Smoke impact** turns PM2.5 into a level:
+
+- **US AQI** uses the EPA's PM2.5 breakpoints (2024): Good up to 9.0 µg/m³, Moderate to 35.4, Unhealthy for sensitive groups to 55.4, Unhealthy to 125.4, Very unhealthy to 225.4, and Hazardous above. The EPA's breakpoints are for 24-hour averages; hourly values are used here, like the AirNow maps do for smoke, so a short spike can read higher than the official daily figure.
+- **Canada's AQHI** uses AQHI+, the PM2.5-only version Canadian agencies use for wildfire smoke: one point per 10 µg/m³, shown as "10+" above 100. 1–3 is Low risk, 4–6 Moderate risk, 7–10 High risk, and above 10 Very high risk.
+- The state is the worse of **now** and the **next 24 hours**, so it can show Unhealthy while the air is still clear: that's your cue to close the windows before the smoke arrives. `level_now` says how it is right now.
+- The forecast is total PM2.5, so on a smoggy day without fires it can rise too.
+
 ## Smoke and wind
 
 - **Smoke forecast** is *total* PM2.5 from all sources, not only smoke. Ordinary days usually sit around 5–15 µg/m³, while real smoke events go well above 35.

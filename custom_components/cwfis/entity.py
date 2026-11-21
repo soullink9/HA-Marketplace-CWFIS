@@ -1,6 +1,8 @@
 """Base entity shared by every CWFIS sensor, binary sensor, event and image."""
 
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, PROVINCES
@@ -55,3 +57,23 @@ class CwfisEntity(CoordinatorEntity[CwfisCoordinator]):
     def available(self) -> bool:
         """Unavailable when the last update failed or this entity's zone no longer exists."""
         return super().available and self.zone_data is not None
+
+
+class WatchingEntity(CwfisEntity):
+    """Base for entities that also depend on other HA sensors (wind, PM2.5).
+
+    They re-evaluate whenever a watched sensor changes, not only every 30 minutes. Subclasses set `_watch`.
+    """
+
+    _watch: list[str] = []
+
+    async def async_added_to_hass(self) -> None:
+        """Start listening to the watched sensors once the entity exists."""
+        await super().async_added_to_hass()
+        if self._watch:
+            self.async_on_remove(async_track_state_change_event(self.hass, self._watch, self._watched_changed))
+
+    @callback
+    def _watched_changed(self, _event) -> None:
+        """Re-evaluate as soon as a watched sensor changes, instead of waiting for the next 30-minute update."""
+        self.async_write_ha_state()

@@ -22,6 +22,9 @@ from homeassistant.helpers.selector import (
 import probatio
 
 from .const import (
+    AQ_SCALES,
+    CONF_AQ_SCALE,
+    CONF_DANGER_DISTANCE,
     CONF_MAP_FIRES,
     CONF_MAP_IMAGES,
     CONF_PM25,
@@ -29,12 +32,16 @@ from .const import (
     CONF_PROVINCES,
     CONF_RADIUS,
     CONF_SMOKE_RADIUS,
+    CONF_WARNING_DISTANCE,
     CONF_WIND,
     CONF_ZONES,
+    DEFAULT_AQ_SCALE,
+    DEFAULT_DANGER_DISTANCE,
     DEFAULT_MAP_FIRES,
     DEFAULT_PM25,
     DEFAULT_RADIUS,
     DEFAULT_SMOKE_RADIUS,
+    DEFAULT_WARNING_DISTANCE,
     DOMAIN,
     MAP_FIRES_MODES,
     MAPS,
@@ -64,7 +71,12 @@ OPTIONS_SCHEMA = probatio.Schema(
     {
         probatio.Required(CONF_RADIUS, default=DEFAULT_RADIUS): _number(10, 5000, 10, "km"),
         probatio.Optional(CONF_ZONES): EntitySelector(EntitySelectorConfig(domain="zone", multiple=True)),
+        probatio.Required(CONF_DANGER_DISTANCE, default=DEFAULT_DANGER_DISTANCE): _number(1, 500, 1, "km"),
+        probatio.Required(CONF_WARNING_DISTANCE, default=DEFAULT_WARNING_DISTANCE): _number(1, 1000, 1, "km"),
         probatio.Required(CONF_SMOKE_RADIUS, default=DEFAULT_SMOKE_RADIUS): _number(50, 5000, 50, "km"),
+        probatio.Required(CONF_AQ_SCALE, default=DEFAULT_AQ_SCALE): SelectSelector(
+            SelectSelectorConfig(options=AQ_SCALES, translation_key=CONF_AQ_SCALE)
+        ),
         probatio.Optional(CONF_WIND): EntitySelector(EntitySelectorConfig(domain="sensor")),
         probatio.Optional(CONF_PM25): EntitySelector(
             EntitySelectorConfig(domain="sensor", device_class=SensorDeviceClass.PM25)
@@ -103,9 +115,15 @@ class CwfisOptionsFlow(OptionsFlowWithReload):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Show the form, or save the submitted settings."""
+        errors = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
-        # Pre-fill the form with the current settings.
+            if user_input[CONF_DANGER_DISTANCE] > user_input[CONF_WARNING_DISTANCE]:
+                errors[CONF_WARNING_DISTANCE] = "warning_inside_danger"
+            else:
+                return self.async_create_entry(data=user_input)
+        # Pre-fill the form with the current settings (or what was just submitted, if it needs fixing).
         return self.async_show_form(
-            step_id="init", data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, self.config_entry.options)
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, user_input or self.config_entry.options),
+            errors=errors,
         )
