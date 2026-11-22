@@ -25,7 +25,7 @@ import types
 sys.dont_write_bytecode = True  # keep __pycache__ out of the repository
 logging.basicConfig(level=logging.ERROR)
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for stubs.py
-from stubs import CLOCK, EVENTS, LOCAL, SESSION, ClientError, UpdateFailed  # noqa: E402,I001  (registers the stand-ins first)
+from stubs import CLOCK, EVENTS, LOCAL, SESSION, STORAGE, ClientError, UpdateFailed  # noqa: E402,I001  (registers the stand-ins first)
 
 # ---------------------------------------------------------------------------
 # Fake servers. SCENARIO holds the data the current scenario wants them to return.
@@ -33,11 +33,22 @@ from stubs import CLOCK, EVENTS, LOCAL, SESSION, ClientError, UpdateFailed  # no
 SCENARIO: dict = {}
 
 
-class FakeResponse:
-    status = 200
+PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 100  # enough of a PNG for the integration's checks
 
-    def __init__(self, body, content_type="application/json"):
-        self.body, self.content_type = body, content_type
+
+class FakeStream:
+    def __init__(self, data):
+        self.data = data
+
+    async def iter_chunked(self, n):
+        for start in range(0, len(self.data), n):
+            yield self.data[start : start + n]
+
+
+class FakeResponse:
+    def __init__(self, body, content_type="application/json", status=200, content_length=None):
+        self.body, self.content_type, self.status, self.content_length = body, content_type, status, content_length
+        self.content = FakeStream(body if isinstance(body, bytes) else str(body).encode())
 
     async def __aenter__(self):
         return self
@@ -52,12 +63,6 @@ class FakeResponse:
         if isinstance(self.body, str):
             raise ValueError("not JSON")
         return self.body
-
-    async def read(self):
-        return b"PNG"
-
-    async def text(self):
-        return str(self.body)
 
 
 def features(rows):
@@ -81,15 +86,21 @@ class FakeSession:
         if "open-meteo" in url:
             if "meteo" in down:
                 raise ClientError("forecast server down")
+            if "meteo_raw" in SCENARIO:
+                return FakeResponse(SCENARIO["meteo_raw"])
             return FakeResponse(SCENARIO.get("meteo", {"hourly": {"time": [], "pm2_5": []}}))
         if url.endswith("/wms"):
-            return FakeResponse(b"", "image/png")
+            return FakeResponse(*SCENARIO.get("map", (PNG, "image/png")))
 
         layer, cql = params.get("TYPENAMES") or params.get("TYPENAME"), params.get("CQL_FILTER", "")
         if layer in down or ("main" in down and layer.endswith("reportedfires")):
             raise ClientError(f"{layer} down")
+        if layer in SCENARIO.get("raw", {}):  # a response exactly as given, however malformed
+            return FakeResponse(SCENARIO["raw"][layer])
         if layer.endswith("reportedfires"):
             if "BEFORE" in cql:
+                if "known" in down and params.get("PROPERTYNAME") == "national_fire_id":
+                    raise ClientError("known-at-midnight query down")
                 if f"fire_year={CLOCK['now'].astimezone(LOCAL).year - 1} " in cql:  # last-year comparison
                     if SCENARIO.get("last_year") is None:
                         raise ClientError("last-year query down")
@@ -139,8 +150,8 @@ def perimeter(*corners):
 
 
 def fire(fire_id, stage="OC", size=10, lat=FIRE_LAT, lon=FIRE_LON, agency="QC", year=2026, **extra):
-    """One reported-fire record as CWFIS returns it."""
-    return dict(
+    """One reported-fire record as CWFIS returns it (`extra` adds or replaces fields)."""
+    record = dict(
         national_fire_id=fire_id,
         agency_code=agency,
         stage_of_control_status=stage,
@@ -149,8 +160,8 @@ def fire(fire_id, stage="OC", size=10, lat=FIRE_LAT, lon=FIRE_LON, agency="QC", 
         longitude=lon,
         status_date="2026-10-12T10:00:00Z",
         fire_year=year,
-        **extra,
     )
+    return record | extra
 
 
 def forecast(start, values):
@@ -336,6 +347,44 @@ def level_problems():
     return problems
 
 
+def helper_problems():
+    """number(), clean_fire(), points() and state_as_float() turn anything a server or sensor sends into safe values."""
+    from cwfis import helpers  # noqa: PLC0415
+
+    problems = []
+    for value, want in (
+        (5, 5.0),
+        (2.5, 2.5),
+        (True, None),
+        (float("nan"), None),
+        (float("inf"), None),
+        (10**400, None),
+        (-1, None),
+        (101, None),
+        ("5", None),
+        (None, None),
+    ):
+        if helpers.number(value, 0, 100) != want:
+            problems.append(f"number({value!r:.20}, 0, 100) = {helpers.number(value, 0, 100)!r}, expected {want!r}")
+    if helpers.clean_fire("x") is not None or helpers.clean_fire(None) is not None:
+        problems.append("clean_fire accepts a record that isn't an object")
+    cleaned = helpers.clean_fire({"national_fire_id": " " + "x" * 500, "fire_size": -1, "fire_year": 2026.5})
+    if (len(cleaned["national_fire_id"]), cleaned["fire_size"], cleaned["fire_year"]) != (const.MAX_TEXT, None, None):
+        problems.append(f"clean_fire gave {cleaned}")
+    deep = [[1.0, 2.0]]
+    for _ in range(const.MAX_GEOMETRY_DEPTH + 5):
+        deep = [deep]
+    if list(helpers.points(deep)) or list(helpers.points({"not": "a list"})) != []:
+        problems.append("points() walks geometry deeper than MAX_GEOMETRY_DEPTH, or a non-list")
+    if list(helpers.points([[[1.0, 2.0], [3.0, 4.0]]])) != [[1.0, 2.0], [3.0, 4.0]]:
+        problems.append("points() misses a normal polygon's vertices")
+    states = types.SimpleNamespace(get=lambda e: types.SimpleNamespace(state=e))
+    for state in ("nan", "inf", "-inf", "abc"):
+        if helpers.state_as_float(types.SimpleNamespace(states=states), state) is not None:
+            problems.append(f"state_as_float accepts {state!r}")
+    return problems
+
+
 def blueprint_problems():
     """The notification blueprint only uses inputs it declares, and offers only levels the sensors can have."""
     path = Path(__file__).resolve().parents[1] / "blueprints" / "automation" / "cwfis" / "local_impact_alert.yaml"
@@ -373,11 +422,36 @@ async def read_everything(entities):
     return states
 
 
+async def set_up(options):
+    """Set up the integration and every entity, as Home Assistant does at start-up. Returns (entry, entities)."""
+    entry = types.SimpleNamespace(entry_id="E", options={**OPTIONS, **(options or {})}, async_on_unload=lambda f: None)
+    await cwfis.async_setup_entry(hass, entry)
+    entities = []
+    for platform in (sensor, binary_sensor, event, image, geo_location):
+        await platform.async_setup_entry(hass, entry, entities.extend)
+    for entity in entities:
+        entity.hass = getattr(entity, "hass", None) or hass
+        await entity.async_added_to_hass()
+    return entry, entities
+
+
 async def scenario(
-    name, start, data, then=None, expect_events=None, expect=None, expect_failure=False, options=None, attrs=None
+    name,
+    start,
+    data,
+    then=None,
+    expect_events=None,
+    expect=None,
+    expect_failure=False,
+    options=None,
+    attrs=None,
+    restart=None,
+    storage=None,
 ):
     """Set up at time `start` with server data `data`; optionally move to (time, data) `then` and refresh.
 
+    restart: (time, data) to restart Home Assistant at instead, keeping what was saved in .storage/.
+    storage: what .storage/ holds before the first set-up (empty when not given).
     expect: {key: value} checked against entity states (by unique id) or the coordinator's data.
     attrs: {(unique id, attribute): value} checked against entity attributes.
     options: settings to change from OPTIONS for this scenario.
@@ -386,13 +460,11 @@ async def scenario(
     SCENARIO.clear()
     SCENARIO.update(data)
     EVENTS.clear()
+    STORAGE.clear()
+    STORAGE.update(storage or {})
     CLOCK["now"] = start
-    entry = types.SimpleNamespace(entry_id="E", options={**OPTIONS, **(options or {})}, async_on_unload=lambda f: None)
     try:
-        await cwfis.async_setup_entry(hass, entry)
-        entities = []
-        for platform in (sensor, binary_sensor, event, image, geo_location):
-            await platform.async_setup_entry(hass, entry, entities.extend)
+        entry, entities = await set_up(options)
         problems = []
         ids = sorted(e._attr_unique_id for e in entities if hasattr(e, "_attr_unique_id"))
         if ids != EXPECTED_UNIQUE_IDS:
@@ -405,6 +477,12 @@ async def scenario(
             SCENARIO.clear()
             SCENARIO.update(new_data)
             await entry.runtime_data.refresh()
+            states = await read_everything(entities)
+        if restart:
+            CLOCK["now"], new_data = restart
+            SCENARIO.clear()
+            SCENARIO.update(new_data)
+            entry, entities = await set_up(options)
             states = await read_everything(entities)
 
         if expect_events is not None and sorted(EVENTS) != sorted(expect_events):
@@ -637,6 +715,231 @@ async def main() -> bool:
             attrs={("smoke_impact", "scale"): "us_aqi", ("fire_threat", "nearest_hotspot_km"): 22.2},
         )
     )
+
+    # --- Malformed and hostile responses: each bad value is skipped or treated as missing, never fatal ---
+    nan, inf = float("nan"), float("inf")
+    deep = [[FIRE_LON, FIRE_LAT]]
+    for _ in range(200):  # far deeper than any real geometry
+        deep = [deep]
+    hostile_fires = {
+        "features": [
+            "not a feature",
+            None,
+            {"properties": None},
+            {"properties": ["a", "list"]},
+            {"properties": fire("2026_QC_1", size=40)},
+            {"properties": fire("2026_QC_2", size=nan)},
+            {"properties": fire("2026_QC_3", size=inf)},
+            {"properties": fire("2026_QC_4", size=10**400)},  # too big for a float
+            {"properties": fire("2026_QC_5", size=True, lat=True, lon=False)},
+            {"properties": fire("2026_QC_6", size="12", lat=nan, lon=inf)},
+            {"properties": fire(["unhashable"], stage={"a": 1}, agency=7, status_date=20261012)},
+            {"properties": fire(12345, year=1e300)},  # a numeric ID is kept as text; an impossible year is missing
+            {"properties": fire("2026_QC_7", status_date=None, year="2026")},
+        ]
+    }
+    hostile = {
+        "fires": [],
+        "raw": {
+            "public:cwfif_national_reportedfires": hostile_fires,
+            "public:hotspots_last24hrs": {
+                "features": [{"properties": ["x"]}, {"properties": {"lat": nan, "lon": 0}}, 5, {"properties": None}]
+            },
+            "public:m3_polygons_current": {
+                "features": [
+                    {"geometry": "a string"},
+                    {"geometry": {"coordinates": deep}},
+                    {"geometry": {"coordinates": [[[nan, inf], [True, False], "x", None]]}},
+                ]
+            },
+            "public:fdr_current_shp": {
+                "features": [{"properties": {"GRIDCODE": g}} for g in (True, nan, inf, 2.5, -1, 99, "4")]
+            },
+            "public:cwfif_national_prescribedfires": {"features": [{"properties": "x"}]},
+        },
+        "last_year": [fire("2025_A", size=inf, year=2025)],
+        "meteo_raw": {
+            "hourly": {
+                "time": [(day + timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M") for h in range(6)] + [5, "garbage"],
+                "pm2_5": [nan, inf, -3.0, 1e9, "12", 22.5, 50.0, 60.0],
+            }
+        },
+    }
+    results.append(
+        await scenario(
+            "Hostile data: non-objects, NaN, infinity, huge numbers, wrong types, absurdly deep geometry",
+            day,
+            hostile,
+            then=(day + timedelta(minutes=30), hostile),
+            expect_events=[],
+            expect={
+                "active": 9,  # every record with properties that are an object
+                "total": 7,  # ...of which 7 have this year as a believable fire_year
+                "area": 50,  # 40 ha + 10 ha; NaN, infinity, huge, true and text sizes count as nothing
+                "hotspots": 0,
+                "perimeter": None,
+                "danger": None,
+                "prescribed": 0,
+                "smoke_forecast": 22.5,  # NaN, infinity, negative, absurd and non-numeric hours skipped
+                "smoke_impact": "moderate",
+                "fire_threat": "watch",
+            },
+        )
+    )
+
+    results.append(
+        await scenario(
+            "Main CWFIS response isn't a feature collection: the update fails cleanly",
+            day,
+            {"fires": [], "raw": {"public:cwfif_national_reportedfires": {"features": "oops"}}},
+            expect_failure=True,
+        )
+    )
+
+    results.append(
+        await scenario(
+            "Only Reported today goes unknown when its query fails",
+            day,
+            {"fires": [fire("2026_QC_1")], "last_year": [], "down": {"known"}},
+            expect={"reported_today": None, "total": 1, "active": 1},
+        )
+    )
+
+    results.append(
+        await scenario(
+            "Optional responses malformed: each goes unknown on its own",
+            day,
+            {
+                "fires": [fire("2026_QC_1")],
+                "last_year": [],
+                "raw": {
+                    "public:hotspots_last24hrs": [],
+                    "public:m3_polygons_current": {"features": None},
+                    "public:fdr_current_shp": "not JSON",
+                    "public:cwfif_national_prescribedfires": {"no": "features"},
+                },
+                "meteo_raw": {"hourly": "nope"},
+            },
+            expect={
+                "total": 1,
+                "hotspots": None,
+                "perimeter": None,
+                "danger": None,
+                "prescribed": None,
+                "smoke_forecast": None,
+                "fire_nearby": True,
+                "fire_threat": "watch",
+            },
+        )
+    )
+
+    # --- Map images: only a real PNG within the size limit is shown ---
+    big = const.MAX_MAP_BYTES + 1
+    for label, response, want in (
+        ("a PNG", (PNG, "image/png"), PNG),
+        ("HTML labelled image/png", (b"<html>hi</html>", "image/png"), None),
+        ("another image type", (PNG, "image/svg+xml"), None),
+        ("too large, by its Content-Length", (PNG, "image/png", 200, big), None),
+        ("too large, without a Content-Length", (PNG + b"\0" * big, "image/png"), None),
+        ("a server error", (b"<ServiceException>Bad layer</ServiceException>", "text/xml", 500), None),
+    ):
+        results.append(
+            await scenario(
+                f"Map image: {label}",
+                day,
+                {"fires": [], "last_year": [], "map": response},
+                expect={"map_fire_danger": want, "map_fire_danger_tomorrow": want},
+            )
+        )
+    message = image.server_errors(
+        b"<ServiceException code='x'>Layer <b>bad</b>\x1b[31m\n  gone</ServiceException>" + b"A" * 1000
+    )
+    problems = [] if message == "Layer bbad/b[31m gone" else [f"logged error text is {message!r}"]
+    long = image.server_errors(b"<ServiceException>" + b"x" * 5000 + b"</ServiceException>")
+    problems += [] if len(long) == image.MAX_ERROR_TEXT else [f"logged error text is {len(long)} characters"]
+    print(("PASS  " if not problems else "FAIL  ") + "Map errors: only GeoServer's message is logged, short and plain")
+    print("".join(f"      - {p}\n" for p in problems), end="")
+    results.append(not problems)
+
+    # --- Fire alert baseline survives a restart ---
+    before = {"fires": [fire("2026_QC_1", "OC", 50), fire("2026_QC_2", "UC", 5)], "last_year": []}
+    after = {
+        "fires": [
+            fire("2026_QC_1", "BH", 80),
+            fire("2026_QC_2", "EX", 5),
+            fire("2026_QC_8", lat=near(3.98, 0.11)[0], lon=near(3.98, 0.11)[1]),
+        ],
+        "last_year": [],
+    }
+    results.append(
+        await scenario(
+            "Restart: what changed while Home Assistant was stopped is still reported",
+            day,
+            before,
+            restart=(day + timedelta(hours=1), after),
+            expect_events=[("new_fire_nearby", "2026_QC_8")] * 2
+            + [("stage_changed", "2026_QC_1")] * 2
+            + [("fire_grew", "2026_QC_1")] * 2
+            + [("fire_out", "2026_QC_2")] * 2,
+        )
+    )
+    slow = {"fires": [fire("2026_QC_1", "OC", 100)], "last_year": []}
+    results.append(
+        await scenario(
+            "Restart: slow growth keeps adding up from the last alert's size",
+            day,
+            slow,
+            then=(day + timedelta(minutes=30), {**slow, "fires": [fire("2026_QC_1", "OC", 115)]}),
+            restart=(day + timedelta(hours=1), {**slow, "fires": [fire("2026_QC_1", "OC", 130)]}),
+            expect_events=[("fire_grew", "2026_QC_1")] * 2,  # 100 -> 130 ha is 30 %, though no step was 25 %
+        )
+    )
+    results.append(
+        await scenario(
+            "Restart after a long time off: starts afresh instead of a burst of old news",
+            day,
+            before,
+            restart=(day + const.ALERT_BASELINE_MAX_AGE + timedelta(hours=1), after),
+            expect_events=[],
+        )
+    )
+    key = const.ALERT_STORAGE_KEY.format(entry_id="E")
+    junk = {
+        "saved": (day - timedelta(minutes=5)).isoformat(),
+        "fires": [
+            "x",
+            {"zone_id": "home", "zone": "Home", "fire": {"national_fire_id": "2026_QC_1"}},  # no distance/bearing
+            {"zone_id": None, "fire": fire("2026_QC_1", distance=1, bearing=1)},
+            {"zone_id": "home", "zone": "Home", "fire": fire("2026_QC_1", distance=nan, bearing=1)},
+            {"zone_id": "home", "zone": ["x"], "fire": fire("2026_QC_9", distance=5.0, bearing=90)},
+        ],
+    }
+    for label, saved, events in (
+        (
+            "unreadable entries are skipped one by one",
+            {"version": 1, "data": json.dumps(junk)},
+            # Only QC_9's entry holds up, so QC_1 is new to the baseline, and QC_9 has gone out.
+            [("new_fire_nearby", "2026_QC_1")] * 2 + [("fire_out", "2026_QC_9")],
+        ),
+        ("not a baseline at all", {"version": 1, "data": json.dumps(["x"])}, []),
+        ("an older layout with no migration", {"version": 0, "data": json.dumps(junk)}, []),
+    ):
+        results.append(
+            await scenario(
+                f"Saved baseline: {label}",
+                day,
+                {"fires": [fire("2026_QC_1")], "last_year": []},
+                storage={key: saved},
+                expect_events=events,
+            )
+        )
+    await cwfis.async_remove_entry(hass, types.SimpleNamespace(entry_id="E"))
+    print(("PASS  " if key not in STORAGE else "FAIL  ") + "Removing the integration deletes its saved baseline")
+    results.append(key not in STORAGE)
+
+    problems = helper_problems()
+    print(("PASS  " if not problems else "FAIL  ") + "Value checks" + "".join(f"\n      - {p}" for p in problems))
+    results.append(not problems)
 
     problems = level_problems() + blueprint_problems()
     print(

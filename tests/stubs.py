@@ -3,10 +3,12 @@
 Importing this module registers them under the real names. The clock is CLOCK["now"] (a UTC datetime the test moves
 forward), with "local" time a fixed UTC-5 to keep the maths simple; EVENTS collects every event the Fire alert entity
 fires. Home Assistant's client session is whatever SESSION["factory"]() returns: the test points it at its fake servers.
+STORAGE is Home Assistant's .storage/ folder: {key: saved data}, kept across set-ups like a restart keeps the files.
 """
 
 from datetime import UTC, timedelta, timezone
 import enum
+import json
 import math
 import sys
 import types
@@ -47,6 +49,39 @@ stub(
     UnitOfDensity=types.SimpleNamespace(MICROGRAMS_PER_CUBIC_METER="µg/m³"),
 )
 stub("homeassistant.core", HomeAssistant=object, callback=lambda f: f)
+
+
+class HomeAssistantError(Exception):
+    pass
+
+
+stub("homeassistant.exceptions", HomeAssistantError=HomeAssistantError)
+
+STORAGE = {}  # .storage/: key -> the saved data, as JSON would bring it back
+
+
+class Store(Generic):
+    """Saves straight away (the real one waits `delay` seconds, and saves on shutdown)."""
+
+    def __init__(self, hass, version, key):
+        self.version, self.key = version, key
+
+    async def async_load(self):
+        saved = STORAGE.get(self.key)
+        if saved is None:
+            return None
+        if saved["version"] != self.version:
+            raise NotImplementedError  # what the real Store does for an older version without a migration
+        return json.loads(saved["data"])
+
+    def async_delay_save(self, data_func, delay=0):
+        STORAGE[self.key] = {"version": self.version, "data": json.dumps(data_func())}
+
+    async def async_remove(self):
+        STORAGE.pop(self.key, None)
+
+
+stub("homeassistant.helpers.storage", Store=Store)
 stub("homeassistant.helpers.device_registry", DeviceInfo=dict, DeviceEntryType=types.SimpleNamespace(SERVICE="service"))
 
 
@@ -84,6 +119,12 @@ class CoordinatorEntity(Generic):
 
     def _handle_coordinator_update(self):
         self.async_write_ha_state()
+
+    async def async_added_to_hass(self):
+        pass
+
+    def async_on_remove(self, func):
+        pass
 
     def async_write_ha_state(self):
         pass

@@ -5,13 +5,18 @@ servers are queried once per update no matter how many entities exist.
 
 Data flow per update:
   1. Reported fires (required; if this fails the whole update fails and HA retries).
-  2. Prescribed burns, hotspots, perimeters, fire danger, last year's numbers and the smoke
+  2. Fires known at midnight, prescribed burns, hotspots, perimeters, fire danger, last year's numbers and the smoke
      forecast (all optional; if one fails only its own sensors show "unknown").
   3. Distances/bearings from Home and every extra watch zone to each active fire, and each zone's smoke forecast.
+
+Everything the servers send is untrusted. A response that isn't a feature collection counts as a failed request;
+inside one, each fire record goes through helpers.clean_fire(), and every other value is checked where it's used, so
+a malformed record or value is skipped (or treated as missing) instead of failing the update.
 """
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from itertools import islice
 import logging
 from math import cos, radians
 
@@ -38,22 +43,39 @@ from .const import (
     LAYER_PRESCRIBED,
     LAYER_REPORTED,
     LEGACY_WFS,
+    MAX_PERIMETER_VERTICES,
+    MAX_PM25,
     OPEN_METEO_URL,
     PROVINCES,
     STAGES,
     UPDATE_INTERVAL,
 )
-from .helpers import bearing, dedupe, fire_size, has_xy, km, pct_change, points
+from .helpers import bearing, clean_fire, dedupe, fire_size, has_xy, km, number, pct_change, points
 
 _LOGGER = logging.getLogger(__name__)
 
-# Anything a flaky server or unexpected response can raise while we parse it.
-FETCH_ERRORS = (aiohttp.ClientError, TimeoutError, KeyError, ValueError, TypeError, IndexError)
+# Anything a flaky server or unexpected response can raise while we parse it (RecursionError: absurdly deep JSON).
+FETCH_ERRORS = (
+    aiohttp.ClientError,
+    TimeoutError,
+    KeyError,
+    ValueError,
+    TypeError,
+    IndexError,
+    AttributeError,
+    ArithmeticError,
+    RecursionError,
+)
 
 
-def _has_lat_lon(properties: dict | None) -> bool:
+def _properties(feature: dict) -> dict:
+    """A feature's properties, or an empty dict when they're missing or not an object."""
+    properties = feature.get("properties")
+    return properties if isinstance(properties, dict) else {}
+
+
+def _has_lat_lon(properties: dict) -> bool:
     """True when a hotspot's properties hold a usable lat/lon pair."""
-    properties = properties or {}
     return has_xy(properties.get("lat"), properties.get("lon"))
 
 
@@ -63,21 +85,25 @@ def _perimeter_distances(lat: float, lon: float, perimeters: list[dict] | None) 
     The closest vertex stands in for the nearest fire edge: exact point-to-polygon distance isn't worth the code
     for a number shown to one decimal of a kilometre.
     """
-    distances = []
-    for perimeter in perimeters or []:
-        geometry = perimeter.get("geometry") or {}
-        # points() yields (lon, lat, ...) in GeoJSON order; extra values such as elevation are ignored.
-        for x, y, *_ in points(geometry.get("coordinates")):
-            distances.append(km(lat, lon, y, x))
-    return distances
+
+    def vertices():
+        """Every usable vertex of every perimeter, in order."""
+        for perimeter in perimeters or []:
+            geometry = perimeter.get("geometry")
+            if isinstance(geometry, dict):
+                yield from points(geometry.get("coordinates"))
+
+    # points() yields (lon, lat, ...) in GeoJSON order; extra values such as elevation are ignored. The cap keeps an
+    # oversized response from tying up Home Assistant; real perimeters near one place stay well under it.
+    return [km(lat, lon, y, x) for x, y, *_ in islice(vertices(), MAX_PERIMETER_VERTICES)]
 
 
 def _danger_codes(danger: list[dict] | None) -> list[int]:
     """The valid fire danger codes (0 to 4) in the polygons around a point; any other value means "no data"."""
     codes = []
     for polygon in danger or []:
-        code = (polygon.get("properties") or {}).get("GRIDCODE")
-        if isinstance(code, (int, float)) and 0 <= code < len(DANGER_LEVELS):
+        code = number(_properties(polygon).get("GRIDCODE"), 0, len(DANGER_LEVELS) - 1)
+        if code is not None and code.is_integer():
             codes.append(int(code))
     return codes
 
@@ -108,16 +134,24 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
     # Low-level requests
     # ------------------------------------------------------------------
     async def _wfs(self, url: str, params: dict) -> list[dict]:
-        """Run a WFS GetFeature request and return the GeoJSON features."""
+        """Run a WFS GetFeature request and return the GeoJSON features (only those that are objects).
+
+        Raises ValueError when the response isn't a feature collection, so it counts as a failed request.
+        """
         params = {"SERVICE": "WFS", "REQUEST": "GetFeature", "OUTPUTFORMAT": "application/json", **params}
         async with self.session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=60)) as resp:
             resp.raise_for_status()
-            return (await resp.json(content_type=None))["features"]
+            body = await resp.json(content_type=None)
+        features = body.get("features") if isinstance(body, dict) else None
+        if not isinstance(features, list):
+            raise ValueError("response is not a GeoJSON feature collection")
+        return [feature for feature in features if isinstance(feature, dict)]
 
     async def _cwfif(self, layer: str, fields: str, cql: str) -> list[dict]:
-        """Query a CWFIF fire layer with a CQL filter; returns each feature's properties."""
+        """Query a CWFIF fire layer with a CQL filter; returns each fire's checked properties (see clean_fire)."""
         params = {"VERSION": "2.0.0", "TYPENAMES": layer, "PROPERTYNAME": fields, "CQL_FILTER": cql}
-        return [feature["properties"] for feature in await self._wfs(CWFIF_WFS, params)]
+        features = await self._wfs(CWFIF_WFS, params)
+        return [fire for feature in features if (fire := clean_fire(feature.get("properties"))) is not None]
 
     async def _around(self, layer: str, fields: str, lat: float, lon: float, reach_km: float) -> list[dict]:
         """Query a legacy CWFIS layer for features inside a box of ±reach_km around a point.
@@ -162,17 +196,19 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
                     LAYER_REPORTED, FIRE_FIELDS, f"(fire_year={year} OR stage_of_control_status<>'EX') AND {now_cql}"
                 )
             )
-            # Fires that already existed at local midnight; anything else was reported today.
-            known = {
-                f.get("national_fire_id")
-                for f in await self._cwfif(
-                    LAYER_REPORTED,
-                    "national_fire_id",
-                    f"fire_year={year} AND record_start BEFORE {midnight} AND record_end AFTER {midnight}",
-                )
-            }
         except FETCH_ERRORS as err:
             raise UpdateFailed(f"CWFIS request failed: {err}") from err
+
+        # Fires that already existed at local midnight; anything else was reported today.
+        known = await self._optional(
+            self._cwfif(
+                LAYER_REPORTED,
+                "national_fire_id",
+                f"fire_year={year} AND record_start BEFORE {midnight} AND record_end AFTER {midnight}",
+            )
+        )
+        if known is not None:
+            known = {fire["national_fire_id"] for fire in known}
 
         burns = await self._optional(
             self._cwfif(LAYER_PRESCRIBED, "national_fire_id,stage_of_control_status,latitude,longitude", now_cql)
@@ -211,7 +247,9 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
         for code, name in STAGES.items():
             in_stage = [fire for fire in burning if fire.get("stage_of_control_status") == code]
             active_by_stage[name.lower().replace(" ", "_")] = len(in_stage)
-        reported_today = [fire for fire in season if fire.get("national_fire_id") not in known]
+        reported_today = None
+        if known is not None:
+            reported_today = len([fire for fire in season if fire["national_fire_id"] not in known])
         out = [fire for fire in season if fire.get("stage_of_control_status") == "EX"]  # "EX" is extinguished
 
         smoke_peak = smoke["max_24h"] if smoke else None
@@ -223,7 +261,7 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
             "zones": by_zone,
             "fires": {fire["national_fire_id"]: fire for fire in home_fires},  # map markers, measured from Home
             "provinces": provinces,
-            "reported_today": len(reported_today),
+            "reported_today": reported_today,
             "active": len(burning),
             "active_attrs": {
                 **active_by_stage,
@@ -263,8 +301,11 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
         found = {"home": ("Home", self.hass.config.latitude, self.hass.config.longitude)}
         for zone_id in self.zone_ids:
             state = self.hass.states.get(zone_id)
-            if zone_id != "zone.home" and state and "latitude" in state.attributes:
-                found[zone_id] = (state.name, state.attributes["latitude"], state.attributes["longitude"])
+            if zone_id == "zone.home" or not state:
+                continue
+            lat, lon = state.attributes.get("latitude"), state.attributes.get("longitude")
+            if has_xy(lat, lon):
+                found[zone_id] = (state.name, lat, lon)
         return found
 
     async def _zone_data(self, name: str, lat: float, lon: float, fires: list[dict], burns: list | None) -> dict:
@@ -293,7 +334,7 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
         # Counts are None (shown as "unknown") when their request failed, rather than a misleading 0.
         hotspots = hotspot_distance = None
         if spots is not None:
-            located = [spot["properties"] for spot in spots if _has_lat_lon(spot.get("properties"))]
+            located = [props for spot in spots if _has_lat_lon(props := _properties(spot))]
             spot_distances = [km(lat, lon, spot["lat"], spot["lon"]) for spot in located]
             in_radius = [d for d in spot_distances if d <= radius]
             hotspots = len(in_radius)
@@ -352,14 +393,24 @@ class CwfisCoordinator(DataUpdateCoordinator[dict]):
         }
         async with self.session.get(OPEN_METEO_URL, params=params, timeout=aiohttp.ClientTimeout(total=30)) as resp:
             resp.raise_for_status()
-            hourly = (await resp.json(content_type=None))["hourly"]
+            body = await resp.json(content_type=None)
+        hourly = body.get("hourly") if isinstance(body, dict) else None
+        times = hourly.get("time") if isinstance(hourly, dict) else None
+        values = hourly.get("pm2_5") if isinstance(hourly, dict) else None
+        if not isinstance(times, list) or not isinstance(values, list):
+            raise ValueError("response has no hourly PM2.5 forecast")
 
         now = dt_util.utcnow()
-        series = [
-            (datetime.fromisoformat(t).replace(tzinfo=UTC), value)
-            for t, value in zip(hourly["time"], hourly["pm2_5"])
-            if value is not None
-        ]
+        series = []
+        for when, value in zip(times, values):
+            # Skip each hour that's missing, isn't a time, or isn't a believable PM2.5 value (NaN, negative, huge).
+            pm25 = number(value, 0, MAX_PM25)
+            if pm25 is None or not isinstance(when, str):
+                continue
+            try:
+                series.append((datetime.fromisoformat(when).replace(tzinfo=UTC), pm25))
+            except ValueError:
+                continue
 
         def peak(hours: int):
             """(time, value) of the highest reading from an hour ago until `hours` ahead."""

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.4.1 (2026-11-22)
+
+Hardening from a security review. Nothing changes in how CWFIS looks or what its entities are called.
+
+- **Bad data from a server no longer takes everything down.** A malformed fire record, a value of the wrong type,
+  NaN, infinity or an impossible number is now skipped or treated as missing, instead of failing the whole update and
+  making every entity unavailable. Fire sizes, PM2.5 values, coordinates, fire danger codes and dates are all checked
+  against believable ranges, so Smoke impact and Fire threat can't show nonsense.
+- **Each optional source fails on its own.** A malformed hotspot, perimeter, fire danger or smoke forecast response
+  now leaves only its own sensors unknown. **Reported today** is now optional too: if its query fails, only it shows
+  unknown.
+- **Fire alerts survive a restart.** What Fire alert last saw is saved, so changes made while Home Assistant was
+  stopped are still announced, and the "Fire grew" baseline keeps adding up. After more than 12 hours off it starts
+  afresh rather than sending a burst of old news. The saved file is removed with the integration.
+- **Map images** accept only a real PNG of at most 10 MB, and the log shows only the map server's own error message,
+  short and as plain text, never the raw response.
+- Very deep or very large fire perimeters are capped, so an oversized response can't tie up Home Assistant.
+- A sensor of yours (wind, PM2.5) that reports `nan` or `inf` now counts as unavailable.
+
+### Repository
+
+- Every GitHub action is pinned to a commit SHA, the Gitea job image to a digest, and `ruff` to a version and hashes
+  (`requirements-ci.txt`), so an upstream change can't slip into a run that publishes a release.
+- GitHub's release workflow grants write access only to the publishing job, and checkouts no longer keep the token.
+- The release scripts and Gitea's release workflow refuse anything but a plain version tag (`v1.2.3`,
+  `v1.3.0-beta`).
+- New test scenarios for hostile server data, malformed optional responses, map downloads, and the saved alert
+  baseline (restart, long time off, unreadable file).
+
 ## 1.4.0 (2026-11-21)
 
 - **What it means for you.** Two new sensors for Home and every watch zone turn the fire and smoke data into a

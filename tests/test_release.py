@@ -111,6 +111,10 @@ def test_notes():
         f"only a {VERSION}-beta section: {VERSION} isn't taken for it ({err.strip()})",
     )
 
+    for bad in (VERSION, f"v{VERSION}\nlatest=true", f"v{VERSION}/../x", f"v{VERSION} ", "vX.Y.Z", "v١.٢.٣", ""):
+        code, _, err = notes_script(bad)
+        check(code != 0 and "isn't a version tag" in err, f"not a version tag {bad!r}: refused")
+
     check(
         release_notes.release_title("1.3.0-beta") == "V1.3.0 Beta" and release_notes.release_title("1.2.0") == "V1.2.0",
         "release titles: V1.3.0 Beta, V1.2.0",

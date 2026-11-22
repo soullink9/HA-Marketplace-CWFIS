@@ -38,9 +38,10 @@ custom_components/cwfis/
 
 1. Every 30 minutes, `CwfisCoordinator._async_update_data()` in `coordinator.py` runs.
 2. It fetches this season's reported fires, plus any older fire still burning. **This is the only required request**: if it fails, the update fails and Home Assistant retries.
-3. Every other source is optional and wrapped in `_optional()`: prescribed burns, last year's numbers (cached for the day) and the Open-Meteo forecast. A failure there sets only its own value to `None`, which shows as "unknown".
+3. Every other source is optional and wrapped in `_optional()`: fires known at midnight (for Reported today), prescribed burns, last year's numbers (cached for the day) and the Open-Meteo forecast. A failure there sets only its own value to `None`, which shows as "unknown".
 4. For Home and each watch zone, `_zone_data()` fetches hotspots, perimeters and fire danger around that zone. It also works out the distance and bearing to every active fire. The small module-level helpers `_perimeter_distances()` and `_danger_codes()` turn the raw perimeter and danger layers into numbers, and `_by_province()` builds the per-agency totals.
-5. Everything is returned as one plain dict, `coordinator.data`. Every entity reads from it, so the servers are queried once per update no matter how many entities there are.
+5. Server data is untrusted. A response that isn't a GeoJSON feature collection counts as a failed request (`_wfs()`). Inside one, every fire record goes through `helpers.clean_fire()`, which turns a field with the wrong type or an impossible value (NaN, infinity, a huge number, `true` where a number belongs) into `None`, and every other number goes through `helpers.number()` with its range. The limits are in `const.py` (`MAX_FIRE_SIZE_HA`, `MAX_PM25`, `MAX_GEOMETRY_DEPTH`, `MAX_PERIMETER_VERTICES`, `MAX_MAP_BYTES`). A bad record or value is skipped, never fatal; add a case to the "Hostile data" scenario when a new one turns up.
+6. Everything is returned as one plain dict, `coordinator.data`. Every entity reads from it, so the servers are queried once per update no matter how many entities there are.
 
 ## The data dict
 

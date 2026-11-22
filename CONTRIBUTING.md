@@ -6,7 +6,7 @@ flows, and how to run the simulation. This page has the rules every change keeps
 ## Checking a change
 
 ```
-pip install ruff
+python3 -m pip install --require-hashes --only-binary=:all: -r requirements-ci.txt
 ruff check && ruff format --check
 python3 tests/test_integration.py
 python3 tests/test_release.py
@@ -112,7 +112,13 @@ installs from GitHub's releases, so every link in the docs and release notes poi
 
 The Gitea workflows use no actions (`actions/checkout` and the like download from GitHub): each job runs in a plain
 image from Docker Hub (`python:3.14-bookworm`) and fetches the code from Gitea with git, so testing and releasing
-keep working when GitHub can't be reached. Only `ruff` comes from PyPI. When the runner's jobs can't reach Gitea at
+keep working when GitHub can't be reached. Only `ruff` comes from PyPI.
+
+Everything CI runs from outside the repository is pinned, so an upstream change can't slip into a run that can
+publish a release: GitHub actions by commit SHA (the tag or branch it was taken from is in a comment), the Gitea
+image by digest, and `ruff` by version and hash in `requirements-ci.txt`. To update one, look up the new SHA, digest
+or version yourself, check what changed, and replace it everywhere it appears (`grep -rn` for the old value).
+GitHub's release workflow grants write access only to the job that publishes, and no checkout keeps the token. When the runner's jobs can't reach Gitea at
 its public address (a runner on the same Docker network as Gitea, say), set an Actions variable `GITEA_INTERNAL_URL`
 to the address they can reach (`http://gitea-server:3000`); both workflows and the publish script use it.
 

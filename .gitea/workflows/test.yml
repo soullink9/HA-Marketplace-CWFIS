@@ -24,7 +24,7 @@ jobs:
     # CWFIS needs Home Assistant 2026.11 or newer, which runs on Python 3.14, so that's what the tests use
     runs-on: ubuntu-latest
     container:
-      image: python:3.14-bookworm
+      image: python:3.14-bookworm@sha256:3fe825da0a80fa8e2cd79baadeb76b03c0ddf3d6cdbc8346778a0208b9d6038c
     steps:
       - name: Get the code
         env:
@@ -40,7 +40,7 @@ jobs:
           git log -1 --format='Testing %h %s'
 
       - name: Install what the checks need (from PyPI)
-        run: pip install --no-cache-dir ruff
+        run: 'python -m pip install --no-cache-dir --require-hashes --only-binary=:all: -r requirements-ci.txt'
 
       - name: Lint and format (ruff)
         run: ruff check && ruff format --check

@@ -34,7 +34,7 @@ All data refreshes every **30 minutes**, while CWFIS itself updates hourly. Map 
 - An alert fires for each zone a fire is near. A fire inside both Home's radius and a cottage zone's radius produces two events, one per zone.
 - **Fire grew** needs both +25 % and +10 ha since the last alert. The size at the last alert is remembered, so slow, steady growth eventually triggers it too.
 - **Fire out** fires when a nearby fire leaves the active list. Leaving the radius list because a zone was removed doesn't count.
-- After a restart, fires already nearby are not announced again.
+- What the alerts last saw is saved, so a restart picks up where it left off: changes made while Home Assistant was stopped are still announced, and slow growth keeps adding up. After more than 12 hours off it starts afresh instead, so you don't get a burst of old news, and fires already nearby are not announced again.
 
 ## Local impact
 

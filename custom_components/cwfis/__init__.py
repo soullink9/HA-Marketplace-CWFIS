@@ -11,7 +11,9 @@ File layout:
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 
+from .const import ALERT_STORAGE_KEY, ALERT_STORAGE_VERSION
 from .coordinator import CwfisConfigEntry, CwfisCoordinator
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.EVENT, Platform.GEO_LOCATION, Platform.IMAGE, Platform.SENSOR]
@@ -29,3 +31,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: CwfisConfigEntry) -> boo
 async def async_unload_entry(hass: HomeAssistant, entry: CwfisConfigEntry) -> bool:
     """Remove all entities (also called before a reload when options change)."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: CwfisConfigEntry) -> None:
+    """Delete the Fire alert entity's saved baseline when the integration is removed."""
+    await Store(hass, ALERT_STORAGE_VERSION, ALERT_STORAGE_KEY.format(entry_id=entry.entry_id)).async_remove()

@@ -35,7 +35,7 @@ jobs:
     # CWFIS needs Home Assistant 2026.11 or newer, which runs on Python 3.14, so that's what the tests use
     runs-on: ubuntu-latest
     container:
-      image: python:3.14-bookworm
+      image: python:3.14-bookworm@sha256:3fe825da0a80fa8e2cd79baadeb76b03c0ddf3d6cdbc8346778a0208b9d6038c
     steps:
       - name: Get the code
         env:
@@ -51,7 +51,7 @@ jobs:
           git log -1 --format='Testing %h %s'
 
       - name: Install what the checks need (from PyPI)
-        run: pip install --no-cache-dir ruff
+        run: 'python -m pip install --no-cache-dir --require-hashes --only-binary=:all: -r requirements-ci.txt'
 
       - name: Lint and format (ruff)
         run: ruff check && ruff format --check
@@ -68,7 +68,7 @@ jobs:
     needs: tests
     runs-on: ubuntu-latest
     container:
-      image: python:3.14-bookworm
+      image: python:3.14-bookworm@sha256:3fe825da0a80fa8e2cd79baadeb76b03c0ddf3d6cdbc8346778a0208b9d6038c
     steps:
       - name: Get the code
         env:
@@ -92,6 +92,15 @@ jobs:
             tag="$GITHUB_REF_NAME"
           else
             tag="v${INPUT_VERSION#[vV]}"  # (a "v" typed by mistake is fine)
+          fi
+          # Only a plain version tag goes any further (it ends up in outputs, file names and the Gitea API).
+          case "$tag" in
+            *[!0-9A-Za-z.-]*) ok=no ;; # a newline, space, slash or anything else that isn't in a version
+            *) printf '%s' "$tag" | grep -Eqx '[vV][0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?' && ok=yes || ok=no ;;
+          esac
+          if [ "$ok" != yes ]; then
+            echo "::error::Not a version tag (v1.2.3, or v1.3.0-beta)" >&2
+            exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

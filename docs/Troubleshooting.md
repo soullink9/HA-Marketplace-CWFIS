@@ -9,6 +9,8 @@ Go to **Settings → Devices & services → Canadian Wildland Fire Information S
 **A sensor shows "Unknown".**
 That optional data source didn't answer during the last update. Everything else keeps working, and it tries again every 30 minutes. Debug logging shows which request failed.
 
+A map picture that stays blank means the map server didn't send a usable PNG; the log says why, once per outage.
+
 **Every sensor is unavailable.**
 The main CWFIS fire server couldn't be reached. Home Assistant keeps retrying automatically. Check that Home Assistant can reach `geoserver.cwfif.nrcan.gc.ca`.
 

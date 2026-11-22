@@ -2,6 +2,7 @@
 
 Each picture is downloaded only when someone views it, and at most once per data update.
 If the map server fails, a single warning is logged and the entity retries after the next update.
+Only a real PNG of at most MAX_MAP_BYTES is accepted; anything else counts as a failure.
 """
 
 from datetime import timedelta
@@ -14,7 +15,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import CANADA_BBOX_3978, CONF_MAP_IMAGES, LEGACY_WMS, MAPS
+from .const import CANADA_BBOX_3978, CONF_MAP_IMAGES, LEGACY_WMS, MAPS, MAX_MAP_BYTES
 from .coordinator import CwfisConfigEntry
 from .entity import CwfisEntity
 
@@ -23,6 +24,35 @@ _LOGGER = logging.getLogger(__name__)
 # Drawn under / over the data layer for context (land, then province borders on top).
 BASEMAP_UNDER = "public:basemap_land"
 BASEMAP_OVER = "public:basemap_inside_bndry"
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"  # the first 8 bytes of every PNG file
+MAX_ERROR_BYTES = 64 * 1024  # how much of an error response is read to find GeoServer's message
+MAX_ERROR_TEXT = 300  # characters of that message that reach the log
+
+
+async def read_capped(resp, limit: int) -> tuple[bytes, bool]:
+    """Up to `limit` bytes of the response body, and whether that's all of it (stops reading at the limit)."""
+    if resp.content_length is not None and resp.content_length > limit:
+        return b"", False
+    body = bytearray()
+    async for chunk in resp.content.iter_chunked(64 * 1024):
+        body += chunk
+        if len(body) > limit:
+            return bytes(body[:limit]), False
+    return bytes(body), True
+
+
+def server_errors(body: bytes) -> str:
+    """GeoServer's <ServiceException> messages from an error response, as one short line of plain text.
+
+    Only the messages are logged, never the raw response, and only printable characters, so a misbehaving server
+    can't fill the log or put markup or control characters in it.
+    """
+    text = body.decode("utf-8", errors="replace")
+    errors = re.findall(r"<ServiceException(?:\s[^>]*)?>(.*?)</ServiceException>", text, re.DOTALL)
+    message = " | ".join(" ".join(error.split()) for error in errors)
+    message = "".join(char for char in message if char.isprintable() and char not in "<>")
+    return message[:MAX_ERROR_TEXT]
 
 
 # Every entity reads the coordinator's data, so Home Assistant needn't limit how many update at once.
@@ -83,17 +113,20 @@ class CwfisMap(CwfisEntity, ImageEntity):
         }
         session = self.coordinator.session
         async with session.get(LEGACY_WMS, params=params, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-            if resp.status == 200 and resp.content_type.startswith("image/"):
-                return await resp.read()
-            text = await resp.text()
-        # GeoServer reports problems as XML <ServiceException> elements; log their text.
-        errors = re.findall(r"<ServiceException(?:\s[^>]*)?>(.*?)</ServiceException>", text, re.DOTALL)
-        self._log(
-            "%s: CWFIS could not draw layers %s: %s",
-            self.name,
-            layers,
-            " | ".join(" ".join(e.split()) for e in errors) or f"HTTP {resp.status} {text[:300]}",
-        )
+            status, content_type = resp.status, resp.content_type
+            if status == 200 and content_type == "image/png":
+                body, complete = await read_capped(resp, MAX_MAP_BYTES)
+                if not complete:
+                    reason = f"the picture is larger than {MAX_MAP_BYTES // (1024 * 1024)} MB"
+                elif not body.startswith(PNG_SIGNATURE):
+                    reason = "the response isn't a PNG picture"
+                else:
+                    return body
+            else:
+                # GeoServer reports problems as XML <ServiceException> elements; only their text is logged.
+                body, _ = await read_capped(resp, MAX_ERROR_BYTES)
+                reason = server_errors(body) or f"HTTP {status}, {content_type or 'no content type'}"
+        self._log("%s: CWFIS could not draw layers %s: %s", self.name, layers, reason)
         return None
 
     async def async_image(self) -> bytes | None:

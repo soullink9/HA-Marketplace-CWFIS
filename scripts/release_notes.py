@@ -5,7 +5,7 @@ Used by both release workflows (.gitea/workflows/release.yml and .github/workflo
 (the tag is v<version>, whether the release was started from the Run workflow button or by pushing a tag).
 The notes always point at the public copy on GitHub, also in a release made on Gitea.
 
-1. The tag must name the version everywhere the project carries it (VERSION_FILES below; a leading "v" and letter
+1. The tag must be a version tag (v1.2.3, or v1.3.0-beta), and must name the version everywhere the project carries it (VERSION_FILES below; a leading "v" and letter
    case are ignored, so v1.2.0-Beta matches 1.2.0-beta), and CHANGELOG.md must have a section for it. A mismatch
    fails the release, so a zip is never published under the wrong version.
 2. The notes are short install steps (the Marketplace, or the zip by hand, with the zip's own download address),
@@ -29,6 +29,9 @@ ZIP = f"{DOMAIN}.zip"  # the same name in every release, so .../releases/latest/
 # Every other place that carries the version, as (file, pattern whose first group is the version).
 VERSION_FILES = []
 EXTRA_ASSETS = []  # files published next to the zip, as (file name, what it is for)
+# The only tags a release is made from: v1.2.3, or v1.3.0-beta. Anything else is refused before it reaches a file
+# name, a URL or the workflow's outputs.
+VERSION_TAG = re.compile(r"[vV][0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?")
 
 
 def project_versions():
@@ -105,6 +108,8 @@ def install_steps(repo, tag):
 def main():
     """Check the tag, write the notes file, and tell the workflow the release's title and pre-release flag."""
     tag, repo, notes_file = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+    if not VERSION_TAG.fullmatch(tag):
+        sys.exit(f"{tag!r} isn't a version tag (v1.2.3, or v1.3.0-beta)")
     version = tag[1:] if tag[:1] in ("v", "V") else tag
     versions = project_versions()
     if len(set(versions.values())) != 1:

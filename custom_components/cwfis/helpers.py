@@ -1,10 +1,19 @@
 """Small pure helper functions (no Home Assistant state, easy to test on their own)."""
 
-from math import atan2, ceil, cos, degrees, floor, radians, sin
+from math import atan2, ceil, cos, degrees, floor, isfinite, radians, sin
 
 from homeassistant.util.location import distance
 
-from .const import CA_AQHI, STAGES, US_AQI, WATCH_DANGER_LEVELS
+from .const import (
+    CA_AQHI,
+    FIRE_YEARS,
+    MAX_FIRE_SIZE_HA,
+    MAX_GEOMETRY_DEPTH,
+    MAX_TEXT,
+    STAGES,
+    US_AQI,
+    WATCH_DANGER_LEVELS,
+)
 
 
 def km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -27,25 +36,72 @@ def compass(deg: float) -> str:
     ]
 
 
+def number(value, low: float, high: float) -> float | None:
+    """`value` as a float when it's a finite number from `low` to `high`, else None.
+
+    Server data is untrusted: JSON can carry NaN, Infinity, huge integers or true/false where a number belongs.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        value = float(value)
+    except OverflowError:  # an integer too big for a float
+        return None
+    return value if isfinite(value) and low <= value <= high else None
+
+
 def has_xy(lat, lon) -> bool:
-    """True when both coordinates are real numbers inside the valid latitude/longitude range."""
-    return isinstance(lat, (int, float)) and isinstance(lon, (int, float)) and -90 <= lat <= 90 and -180 <= lon <= 180
+    """True when both coordinates are finite numbers inside the valid latitude/longitude range."""
+    return number(lat, -90, 90) is not None and number(lon, -180, 180) is not None
 
 
-def points(coords):
+def text(value) -> str | None:
+    """A text field from the server, trimmed and length-capped, or None when it's empty or not text.
+
+    A whole-number ID (some agencies send numbers) is kept as text, so it can be compared and used as a key.
+    """
+    if isinstance(value, int) and not isinstance(value, bool):
+        value = str(value)
+    if not isinstance(value, str):
+        return None
+    return value.strip()[:MAX_TEXT] or None
+
+
+def clean_fire(properties) -> dict | None:
+    """One fire record from the server with every field checked, or None when it isn't a record at all.
+
+    A field with the wrong type or an impossible value becomes None, as if the server had left it out: the fire is
+    kept, and whatever uses that field treats it as missing.
+    """
+    if not isinstance(properties, dict):
+        return None
+    year = number(properties.get("fire_year"), *FIRE_YEARS)
+    return {
+        "national_fire_id": text(properties.get("national_fire_id")),
+        "agency_code": text(properties.get("agency_code")),
+        "stage_of_control_status": text(properties.get("stage_of_control_status")),
+        "fire_size": number(properties.get("fire_size"), 0, MAX_FIRE_SIZE_HA),
+        "latitude": number(properties.get("latitude"), -90, 90),
+        "longitude": number(properties.get("longitude"), -180, 180),
+        "status_date": text(properties.get("status_date")),
+        "fire_year": int(year) if year is not None and year.is_integer() else None,
+    }
+
+
+def points(coords, depth: int = 0):
     """Yield every [lon, lat] pair from GeoJSON coordinates of any nesting depth.
 
     Polygons and MultiPolygons nest coordinate lists several levels deep; this walks them all
-    and silently skips empty or malformed parts instead of raising.
+    and silently skips empty, malformed or implausibly deep parts instead of raising.
     """
-    if not coords:
+    if not coords or not isinstance(coords, list) or depth > MAX_GEOMETRY_DEPTH:
         return
     if isinstance(coords[0], (int, float)):  # reached a single [lon, lat(, z)] position
         if len(coords) >= 2 and has_xy(coords[1], coords[0]):
             yield coords
     else:
         for part in coords:
-            yield from points(part)
+            yield from points(part, depth + 1)
 
 
 def dedupe(fires: list[dict]) -> list[dict]:
@@ -63,9 +119,8 @@ def dedupe(fires: list[dict]) -> list[dict]:
 
 
 def fire_size(fire: dict) -> float:
-    """Fire size in hectares; missing or negative ("unknown") sizes count as 0."""
-    value = fire.get("fire_size")
-    return max(value, 0) if isinstance(value, (int, float)) else 0
+    """Fire size in hectares; missing, negative ("unknown") or impossible sizes count as 0."""
+    return number(fire.get("fire_size"), 0, MAX_FIRE_SIZE_HA) or 0
 
 
 def pct_change(now: float, before: float | None) -> int | None:
@@ -74,11 +129,12 @@ def pct_change(now: float, before: float | None) -> int | None:
 
 
 def state_as_float(hass, entity_id: str) -> float | None:
-    """Numeric state of another Home Assistant entity, or None if it's missing/unknown/non-numeric."""
+    """Numeric state of another Home Assistant entity, or None if it's missing/unknown/non-numeric/not finite."""
     try:
-        return float(hass.states.get(entity_id).state)
+        value = float(hass.states.get(entity_id).state)
     except AttributeError, TypeError, ValueError:
         return None
+    return value if isfinite(value) else None
 
 
 def fire_info(fire: dict) -> dict:

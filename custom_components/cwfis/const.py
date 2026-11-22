@@ -69,6 +69,26 @@ GROWTH_FACTOR = 1.25  # "Fire grew" alert: size up 25 % ...
 GROWTH_MIN_HA = 10  # ... and by at least 10 ha since the last alert
 MAX_LISTED_FIRES = 20  # cap on fires listed in one entity's attributes (keeps the database small)
 
+# The Fire alert entity saves what it last saw in .storage/, so a restart doesn't lose the growth baseline or the
+# changes made while Home Assistant was stopped. Bump the version when the saved layout changes.
+ALERT_STORAGE_VERSION = 1
+ALERT_STORAGE_KEY = "cwfis.{entry_id}.fire_alert"
+# A saved baseline older than this is dropped (Home Assistant was off a long time): starting afresh beats a burst of
+# alerts about old news.
+ALERT_BASELINE_MAX_AGE = timedelta(hours=12)
+
+# ---------------------------------------------------------------------------
+# Limits on what the servers send. Anything outside them is treated as missing, so one bad value can't produce a
+# nonsense state or stop an update.
+# ---------------------------------------------------------------------------
+MAX_FIRE_SIZE_HA = 10_000_000  # ha; Canada's largest recorded fires are around 1.5 million ha
+MAX_PM25 = 5_000  # µg/m³; the worst wildfire smoke ever measured is well under this
+FIRE_YEARS = (1900, 2200)  # a fire_year outside this range is treated as missing
+MAX_TEXT = 100  # characters kept from a text field (fire ID, agency, stage, date)
+MAX_GEOMETRY_DEPTH = 8  # GeoJSON nests at most 4 deep (MultiPolygon); deeper parts are skipped
+MAX_PERIMETER_VERTICES = 500_000  # perimeter vertices measured per zone and update
+MAX_MAP_BYTES = 10 * 1024 * 1024  # a rendered map is well under 1 MB
+
 # ---------------------------------------------------------------------------
 # Lookup tables
 # ---------------------------------------------------------------------------

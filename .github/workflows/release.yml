@@ -19,8 +19,8 @@ on:
     tags: ["v*.*.*", "V*.*.*"]
   workflow_dispatch:
 
-permissions:
-  contents: write # to publish releases
+# Nothing by default; each job asks for only what it needs, and only the release job can write.
+permissions: {}
 
 # One run at a time: a mirror push that moves main and brings a tag starts this twice, and the second run then
 # finds the release already published instead of racing the first to create it.
@@ -31,11 +31,14 @@ concurrency:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # to list the tags and releases
     outputs:
       releases: ${{ steps.plan.outputs.releases }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          persist-credentials: false
           fetch-depth: 0 # every tag, to compare with GitHub's releases
 
       - name: Find the version tags GitHub has no release for
@@ -51,18 +54,21 @@ jobs:
     if: needs.plan.outputs.releases != '[]'
     name: Release ${{ matrix.tag }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # to publish releases; the token only reaches the Publish step (checkout doesn't keep it)
     strategy:
       max-parallel: 1 # one at a time, oldest version first
       fail-fast: false # a version that fails its checks doesn't hold up the others
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.releases) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          persist-credentials: false
           ref: ${{ matrix.tag }} # the release is built from its tag, as on Gitea
 
       # CWFIS needs Home Assistant 2026.11 or newer, which runs on Python 3.14, so that's what the tests use
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.14"
 
@@ -73,7 +79,7 @@ jobs:
         run: python3 scripts/release_notes.py "$TAG" "$GITHUB_REPOSITORY" notes.md >> "$GITHUB_OUTPUT"
 
       - name: Install what the checks need
-        run: pip install ruff
+        run: 'python -m pip install --require-hashes --only-binary=:all: -r requirements-ci.txt'
 
       - name: Lint and format (ruff)
         run: ruff check && ruff format --check
