@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.3 (2026-11-25)
+
+Telemetry audit. Nothing changes in how CWFIS works: the integration itself never had analytics or tracking, and still
+only contacts the servers listed in [Privacy](docs/Privacy.md).
+
+### Repository
+
+- Every CI workflow now sets `GH_TELEMETRY=false` and `DO_NOT_TRACK=1`. Since v2.91.0 the GitHub CLI (`gh`, used by
+  GitHub's release workflow) sends usage telemetry unless told not to; this turns it off, along with any other tool
+  that honours `DO_NOT_TRACK`. A new check in `tests/test_release.py` fails if a workflow leaves either out.
+
 ## 1.4.2 (2026-11-25)
 
 Dependency update. Nothing changes in how CWFIS works; it still has no Python requirements of its own.

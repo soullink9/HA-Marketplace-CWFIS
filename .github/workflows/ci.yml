@@ -9,6 +9,12 @@ on:
     - cron: "0 6 * * 1"
   workflow_dispatch:
 
+# No telemetry from any tool a job runs: GitHub CLI (gh) sends usage telemetry unless told not to, and
+# DO_NOT_TRACK is the common opt-out other tools honour. tests/test_release.py checks every workflow sets both.
+env:
+  GH_TELEMETRY: "false"
+  DO_NOT_TRACK: "1"
+
 permissions:
   contents: read
 

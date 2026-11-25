@@ -25,6 +25,9 @@ on:
         required: true
 
 env:
+  # No telemetry from any tool a job runs (gh's opt-out, and DO_NOT_TRACK for the rest). Checked by test_release.py.
+  GH_TELEMETRY: "false"
+  DO_NOT_TRACK: "1"
   PUBLIC_REPOSITORY: soullink9/HA-Marketplace-CWFIS
   # Gitea's address as the job containers can reach it, if that isn't its public address (ROOT_URL): for a runner
   # next to Gitea, e.g. http://gitea-server:3000. Set it once as an Actions variable on your user or organisation.

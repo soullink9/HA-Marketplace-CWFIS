@@ -20,6 +20,12 @@ on:
   workflow_dispatch:
 
 # Nothing by default; each job asks for only what it needs, and only the release job can write.
+# No telemetry from any tool a job runs: GitHub CLI (gh) sends usage telemetry unless told not to, and
+# DO_NOT_TRACK is the common opt-out other tools honour. tests/test_release.py checks every workflow sets both.
+env:
+  GH_TELEMETRY: "false"
+  DO_NOT_TRACK: "1"
+
 permissions: {}
 
 # One run at a time: a mirror push that moves main and brings a tag starts this twice, and the second run then

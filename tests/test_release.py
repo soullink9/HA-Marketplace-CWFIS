@@ -1,6 +1,6 @@
 """Release scripts: the version check and notes (scripts/release_notes.py), building and checking the zip
 (scripts/build_package.py, scripts/check_package.py), and publishing on Gitea (scripts/publish_gitea_release.py)
-against a fake Gitea server. These run in both release workflows, so a mistake here would stop or spoil a release.
+against a fake Gitea server, and that every workflow turns telemetry off. These run in both release workflows, so a mistake here would stop or spoil a release.
 
 Run:  python3 tests/test_release.py   (Python's standard library only; prints PASS/FAIL per check)
 """
@@ -365,12 +365,27 @@ def test_plan():
     check("::warning::v0.9.0" in result.stdout, "…and warns, in the run's log, about the tag it can't build")
 
 
+# --- workflows: every one turns telemetry off for the tools its jobs run (the project allows no telemetry) ---
+def test_no_telemetry():
+    workflows = sorted([*ROOT.glob(".github/workflows/*.yml"), *ROOT.glob(".gitea/workflows/*.yml")])
+    check(len(workflows) == 5, f"found the 5 workflows ({len(workflows)})")
+    for path in workflows:
+        text = path.read_text()
+        # the workflow-level env: block, from "env:" at the start of a line to the next line that isn't indented
+        block = re.search(r"^env:\n((?:[ #].*\n|\n)*)", text, re.M)
+        env = block.group(1) if block else ""
+        name = path.relative_to(ROOT)
+        check(re.search(r'^  GH_TELEMETRY: "false"$', env, re.M) is not None, f"{name}: GH_TELEMETRY is false")
+        check(re.search(r'^  DO_NOT_TRACK: "1"$', env, re.M) is not None, f"{name}: DO_NOT_TRACK is set")
+
+
 if __name__ == "__main__":
     try:
         test_notes()
         test_package()
         test_publish()
         test_plan()
+        test_no_telemetry()
     finally:
         shutil.rmtree(TMP, ignore_errors=True)
     print()

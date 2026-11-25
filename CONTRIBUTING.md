@@ -118,7 +118,9 @@ Everything CI runs from outside the repository is pinned, so an upstream change 
 publish a release: GitHub actions by commit SHA (the tag or branch it was taken from is in a comment), the Gitea
 image by digest, and `ruff` by version and hash in `requirements-ci.txt`. To update one, look up the new SHA, digest
 or version yourself, check what changed, and replace it everywhere it appears (`grep -rn` for the old value).
-GitHub's release workflow grants write access only to the job that publishes, and no checkout keeps the token. When the runner's jobs can't reach Gitea at
+No telemetry, ever: nothing in the integration, CI or its tools may send analytics or usage data. Every workflow sets
+`GH_TELEMETRY: "false"` and `DO_NOT_TRACK: "1"` at the top (`tests/test_release.py` checks it); keep them in a new
+workflow, and turn off any telemetry a new tool has. GitHub's release workflow grants write access only to the job that publishes, and no checkout keeps the token. When the runner's jobs can't reach Gitea at
 its public address (a runner on the same Docker network as Gitea, say), set an Actions variable `GITEA_INTERNAL_URL`
 to the address they can reach (`http://gitea-server:3000`); both workflows and the publish script use it.
 
