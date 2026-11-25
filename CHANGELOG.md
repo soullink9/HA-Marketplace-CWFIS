@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.2 (2026-11-25)
+
+Dependency update. Nothing changes in how CWFIS works; it still has no Python requirements of its own.
+
+### Repository
+
+- CI moves to the latest pinned versions: `actions/checkout` v7.0.1 (was v5.1.0), `actions/setup-python` v7.1.0
+  (was v6.3.0), the latest `hassfest` from Home Assistant's actions, and a fresh `python:3.14-bookworm` image digest
+  (Python 3.14.10) for the Gitea jobs. `ruff` 0.17.6 and the HACS action were already the latest.
+
 ## 1.4.1 (2026-11-22)
 
 Hardening from a security review. Nothing changes in how CWFIS looks or what its entities are called.

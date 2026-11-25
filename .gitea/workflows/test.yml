@@ -24,7 +24,7 @@ jobs:
     # CWFIS needs Home Assistant 2026.11 or newer, which runs on Python 3.14, so that's what the tests use
     runs-on: ubuntu-latest
     container:
-      image: python:3.14-bookworm@sha256:3fe825da0a80fa8e2cd79baadeb76b03c0ddf3d6cdbc8346778a0208b9d6038c
+      image: python:3.14-bookworm@sha256:fbaf91204f2758a70a7f7d6cf3c2871851227152a54e6a7b5b59941c4566b6b5
     steps:
       - name: Get the code
         env:
